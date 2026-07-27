@@ -1,10 +1,10 @@
 {
   "id": "muhammad-akif-janjua/linear-guard",
   "name": "Linear Guard",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
   "provider": "linear",
-  "description": "Governance-first Linear integration for safe reads and approval-controlled issue creation with signed RailCall receipts.",
+  "description": "Governance-first Linear integration for safe discovery reads and approval-controlled issue creation with signed RailCall receipts.",
   "commands": [
     {
       "id": "linear.get_current_user",
@@ -36,6 +36,66 @@
       "output_schema": {
         "team_count": "number",
         "teams_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_projects",
+      "title": "List Linear Projects",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "project_count": "number",
+        "projects_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_labels",
+      "title": "List Linear Issue Labels",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "label_count": "number",
+        "labels_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_workflow_states",
+      "title": "List Linear Workflow States",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "offset": {
+          "type": "number",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "state_count": "number",
+        "returned_count": "number",
+        "next_offset": "number",
+        "has_more": "boolean",
+        "workflow_states_json": "string",
         "http_status": "number"
       }
     },

@@ -1,9 +1,12 @@
 """
 Linear Guard for RailCall.
 
-Initial governed prototype:
+Governed Linear module:
 - linear.get_current_user
 - linear.list_teams
+- linear.list_projects
+- linear.list_labels
+- linear.list_workflow_states
 - linear.create_issue
 
 The Linear API key is loaded from the RailCall vault entry named "linear".
@@ -499,6 +502,214 @@ def linear_list_teams(inputs, stamp):
             ensure_ascii=False,
             separators=(",", ":"),
         ),
+    }, None
+
+
+
+def linear_list_projects(inputs, stamp):
+    """List up to 100 projects visible to the configured Linear account."""
+    status, data = _graphql(
+        """
+        query RailCallProjects {
+          projects(first: 100) {
+            nodes {
+              id
+              name
+            }
+          }
+        }
+        """
+    )
+
+    connection = data.get("projects")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+
+    if not isinstance(nodes, list):
+        raise RuntimeError(
+            "Linear did not return a project list."
+        )
+
+    projects = []
+
+    for project in nodes:
+        if not isinstance(project, dict):
+            continue
+
+        projects.append({
+            "id": str(project.get("id") or ""),
+            "name": str(project.get("name") or ""),
+        })
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "project_count": len(projects),
+        "projects_json": json.dumps(
+            projects,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }, None
+
+
+def linear_list_labels(inputs, stamp):
+    """List up to 100 issue labels visible to the configured account."""
+    status, data = _graphql(
+        """
+        query RailCallIssueLabels {
+          issueLabels(first: 100) {
+            nodes {
+              id
+              name
+            }
+          }
+        }
+        """
+    )
+
+    connection = data.get("issueLabels")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+
+    if not isinstance(nodes, list):
+        raise RuntimeError(
+            "Linear did not return an issue-label list."
+        )
+
+    labels = []
+
+    for label in nodes:
+        if not isinstance(label, dict):
+            continue
+
+        labels.append({
+            "id": str(label.get("id") or ""),
+            "name": str(label.get("name") or ""),
+        })
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "label_count": len(labels),
+        "labels_json": json.dumps(
+            labels,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }, None
+
+
+def linear_list_workflow_states(inputs, stamp):
+    """
+    List Linear workflow states in receipt-safe pages.
+
+    RailCall Studio currently truncates long string fields in receipt views,
+    so this command keeps each JSON page below a conservative character limit.
+    """
+    offset = inputs.get("offset", 0)
+    limit = inputs.get("limit", 10)
+
+    try:
+        offset = int(offset)
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "offset and limit must be integers."
+        ) from exc
+
+    if offset < 0:
+        raise RuntimeError(
+            "offset must be zero or greater."
+        )
+
+    if limit < 1 or limit > 25:
+        raise RuntimeError(
+            "limit must be between 1 and 25."
+        )
+
+    status, data = _graphql(
+        """
+        query RailCallWorkflowStates {
+          workflowStates(first: 100) {
+            nodes {
+              id
+              name
+              type
+              position
+            }
+          }
+        }
+        """
+    )
+
+    connection = data.get("workflowStates")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+
+    if not isinstance(nodes, list):
+        raise RuntimeError(
+            "Linear did not return a workflow-state list."
+        )
+
+    states = []
+
+    for state in nodes:
+        if not isinstance(state, dict):
+            continue
+
+        position = state.get("position")
+
+        states.append({
+            "id": str(state.get("id") or ""),
+            "name": str(state.get("name") or "")[:80],
+            "type": str(state.get("type") or ""),
+            "position": position if isinstance(position, (int, float)) else None,
+        })
+
+    states.sort(
+        key=lambda item: (
+            item["position"] is None,
+            item["position"] if item["position"] is not None else 0,
+            item["name"].lower(),
+        )
+    )
+
+    requested_page = states[offset:offset + limit]
+    page = []
+    max_json_characters = 260
+
+    for state in requested_page:
+        candidate = page + [state]
+        candidate_json = json.dumps(
+            candidate,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+        if page and len(candidate_json) > max_json_characters:
+            break
+
+        page = candidate
+
+    page_json = json.dumps(
+        page,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    returned_count = len(page)
+    next_offset = offset + returned_count
+    has_more = next_offset < len(states)
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "state_count": len(states),
+        "returned_count": returned_count,
+        "next_offset": next_offset,
+        "has_more": has_more,
+        "workflow_states_json": page_json,
     }, None
 
 
