@@ -7,6 +7,8 @@ Governed Linear module:
 - linear.list_projects
 - linear.list_labels
 - linear.list_workflow_states
+- linear.search_issues
+- linear.get_issue
 - linear.create_issue
 
 The Linear API key is loaded from the RailCall vault entry named "linear".
@@ -710,6 +712,296 @@ def linear_list_workflow_states(inputs, stamp):
         "next_offset": next_offset,
         "has_more": has_more,
         "workflow_states_json": page_json,
+    }, None
+
+
+
+def linear_search_issues(inputs, stamp):
+    """
+    Search issue titles and descriptions, returning receipt-safe pages.
+
+    The command searches up to 100 of the most recently updated matches.
+    Use offset to retrieve additional receipt-safe pages from that result set.
+    """
+    query_text = inputs.get("query")
+    offset = inputs.get("offset", 0)
+    limit = inputs.get("limit", 10)
+
+    if not isinstance(query_text, str) or not query_text.strip():
+        raise RuntimeError(
+            "query must be a non-empty string."
+        )
+
+    query_text = query_text.strip()
+
+    if len(query_text) > 200:
+        raise RuntimeError(
+            "query must be 200 characters or fewer."
+        )
+
+    try:
+        offset = int(offset)
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "offset and limit must be integers."
+        ) from exc
+
+    if offset < 0:
+        raise RuntimeError(
+            "offset must be zero or greater."
+        )
+
+    if limit < 1 or limit > 25:
+        raise RuntimeError(
+            "limit must be between 1 and 25."
+        )
+
+    status, data = _graphql(
+        """
+        query RailCallSearchIssues($query: String!) {
+          issues(
+            first: 100
+            orderBy: updatedAt
+            filter: {
+              or: [
+                { title: { containsIgnoreCase: $query } }
+                { description: { containsIgnoreCase: $query } }
+              ]
+            }
+          ) {
+            nodes {
+              identifier
+              title
+              priority
+              updatedAt
+              state {
+                name
+              }
+            }
+          }
+        }
+        """,
+        {
+            "query": query_text,
+        },
+    )
+
+    connection = data.get("issues")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+
+    if not isinstance(nodes, list):
+        raise RuntimeError(
+            "Linear did not return an issue search result."
+        )
+
+    issues = []
+
+    for issue in nodes:
+        if not isinstance(issue, dict):
+            continue
+
+        state = issue.get("state")
+        priority = issue.get("priority")
+
+        issues.append({
+            "identifier": str(issue.get("identifier") or ""),
+            "title": str(issue.get("title") or "")[:100],
+            "state": (
+                str(state.get("name") or "")
+                if isinstance(state, dict)
+                else ""
+            ),
+            "priority": (
+                int(priority)
+                if isinstance(priority, (int, float))
+                else 0
+            ),
+            "updated_at": str(issue.get("updatedAt") or ""),
+        })
+
+    requested_page = issues[offset:offset + limit]
+    page = []
+    max_json_characters = 260
+
+    for issue in requested_page:
+        candidate = page + [issue]
+        candidate_json = json.dumps(
+            candidate,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+        if page and len(candidate_json) > max_json_characters:
+            break
+
+        page = candidate
+
+    page_json = json.dumps(
+        page,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    returned_count = len(page)
+    next_offset = offset + returned_count
+    has_more = next_offset < len(issues)
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "matched_count": len(issues),
+        "returned_count": returned_count,
+        "next_offset": next_offset,
+        "has_more": has_more,
+        "result_cap_reached": len(issues) >= 100,
+        "issues_json": page_json,
+    }, None
+
+
+def linear_get_issue(inputs, stamp):
+    """Fetch one Linear issue by UUID or shorthand identifier such as RAI-9."""
+    issue_id = inputs.get("issue_id")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError(
+            "issue_id must be 200 characters or fewer."
+        )
+
+    status, data = _graphql(
+        """
+        query RailCallGetIssue($issueId: String!) {
+          issue(id: $issueId) {
+            id
+            identifier
+            title
+            description
+            url
+            priority
+            createdAt
+            updatedAt
+            state {
+              id
+              name
+              type
+            }
+            assignee {
+              id
+              name
+            }
+            project {
+              id
+              name
+            }
+            team {
+              id
+              name
+              key
+            }
+          }
+        }
+        """,
+        {
+            "issueId": issue_id,
+        },
+    )
+
+    issue = data.get("issue")
+
+    if not isinstance(issue, dict):
+        raise RuntimeError(
+            f"Linear issue {issue_id!r} was not found."
+        )
+
+    state = issue.get("state")
+    assignee = issue.get("assignee")
+    project = issue.get("project")
+    team = issue.get("team")
+    description = issue.get("description")
+    priority = issue.get("priority")
+
+    if not isinstance(description, str):
+        description = ""
+
+    description_preview = description[:240]
+
+    if len(description) > len(description_preview):
+        description_preview += "…"
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "issue_id": str(issue.get("id") or ""),
+        "identifier": str(issue.get("identifier") or ""),
+        "title": str(issue.get("title") or ""),
+        "description_preview": description_preview,
+        "url": str(issue.get("url") or ""),
+        "priority": (
+            int(priority)
+            if isinstance(priority, (int, float))
+            else 0
+        ),
+        "state_id": (
+            str(state.get("id") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "state_name": (
+            str(state.get("name") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "state_type": (
+            str(state.get("type") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "assignee_id": (
+            str(assignee.get("id") or "")
+            if isinstance(assignee, dict)
+            else ""
+        ),
+        "assignee_name": (
+            str(assignee.get("name") or "")
+            if isinstance(assignee, dict)
+            else ""
+        ),
+        "project_id": (
+            str(project.get("id") or "")
+            if isinstance(project, dict)
+            else ""
+        ),
+        "project_name": (
+            str(project.get("name") or "")
+            if isinstance(project, dict)
+            else ""
+        ),
+        "team_id": (
+            str(team.get("id") or "")
+            if isinstance(team, dict)
+            else ""
+        ),
+        "team_name": (
+            str(team.get("name") or "")
+            if isinstance(team, dict)
+            else ""
+        ),
+        "team_key": (
+            str(team.get("key") or "")
+            if isinstance(team, dict)
+            else ""
+        ),
+        "created_at": str(issue.get("createdAt") or ""),
+        "updated_at": str(issue.get("updatedAt") or ""),
     }, None
 
 
