@@ -1,10 +1,10 @@
 {
   "id": "muhammad-akif-janjua/linear-guard",
   "name": "Linear Guard",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
   "provider": "linear",
-  "description": "Governance-first Linear integration for safe discovery and issue reads, plus approval-controlled issue creation with signed RailCall receipts.",
+  "description": "Governance-first Linear integration with safe discovery and issue reads, plus approval-controlled issue creation, updates, and comments with signed RailCall receipts.",
   "commands": [
     {
       "id": "linear.get_current_user",
@@ -197,6 +197,83 @@
         "identifier": "string",
         "title": "string",
         "url": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.update_issue",
+      "title": "Update a Linear Issue",
+      "provider": "linear",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": false
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "state_id": {
+          "type": "string",
+          "required": false
+        },
+        "project_id": {
+          "type": "string",
+          "required": false
+        },
+        "priority": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "issue_id": "string",
+        "identifier": "string",
+        "title": "string",
+        "url": "string",
+        "priority": "number",
+        "state_id": "string",
+        "state_name": "string",
+        "state_type": "string",
+        "project_id": "string",
+        "project_name": "string",
+        "updated_at": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.add_comment",
+      "title": "Add a Comment to a Linear Issue",
+      "provider": "linear",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true
+        },
+        "body": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "comment_id": "string",
+        "issue_id": "string",
+        "body_preview": "string",
+        "created_at": "string",
         "http_status": "number"
       }
     }
