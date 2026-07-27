@@ -10,6 +10,8 @@ Governed Linear module:
 - linear.search_issues
 - linear.get_issue
 - linear.create_issue
+- linear.update_issue
+- linear.add_comment
 
 The Linear API key is loaded from the RailCall vault entry named "linear".
 No credential is stored in this source file or returned in receipts.
@@ -1071,3 +1073,286 @@ def linear_create_issue(inputs, stamp):
         "title": str(issue.get("title") or ""),
         "url": str(issue.get("url") or ""),
     }, None
+
+def linear_update_issue(inputs, stamp):
+    """
+    Update selected fields on one Linear issue.
+
+    Every invocation is governed by RailCall's approval airlock because the
+    manifest declares this command as write_requires_approval.
+    """
+    issue_id = inputs.get("issue_id")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError(
+            "issue_id must be 200 characters or fewer."
+        )
+
+    update_input = {}
+
+    if "title" in inputs:
+        title = inputs.get("title")
+
+        if not isinstance(title, str) or not title.strip():
+            raise RuntimeError(
+                "title must be a non-empty string when supplied."
+            )
+
+        title = title.strip()
+
+        if len(title) > 255:
+            raise RuntimeError(
+                "title must be 255 characters or fewer."
+            )
+
+        update_input["title"] = title
+
+    if "description" in inputs:
+        description = inputs.get("description")
+
+        if not isinstance(description, str):
+            raise RuntimeError(
+                "description must be a string when supplied."
+            )
+
+        if len(description) > 100000:
+            raise RuntimeError(
+                "description must be 100000 characters or fewer."
+            )
+
+        update_input["description"] = description
+
+    if "state_id" in inputs:
+        state_id = inputs.get("state_id")
+
+        if not isinstance(state_id, str) or not state_id.strip():
+            raise RuntimeError(
+                "state_id must be a non-empty Linear workflow-state UUID."
+            )
+
+        update_input["stateId"] = state_id.strip()
+
+    if "project_id" in inputs:
+        project_id = inputs.get("project_id")
+
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise RuntimeError(
+                "project_id must be a non-empty Linear project UUID."
+            )
+
+        update_input["projectId"] = project_id.strip()
+
+    if "priority" in inputs:
+        priority = inputs.get("priority")
+
+        if isinstance(priority, bool):
+            raise RuntimeError(
+                "priority must be an integer from 0 to 4."
+            )
+
+        try:
+            priority = int(priority)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "priority must be an integer from 0 to 4."
+            ) from exc
+
+        if priority < 0 or priority > 4:
+            raise RuntimeError(
+                "priority must be between 0 and 4."
+            )
+
+        update_input["priority"] = priority
+
+    if not update_input:
+        raise RuntimeError(
+            "Supply at least one field to update: title, description, "
+            "state_id, project_id, or priority."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallUpdateIssue(
+          $issueId: String!
+          $input: IssueUpdateInput!
+        ) {
+          issueUpdate(id: $issueId, input: $input) {
+            success
+            issue {
+              id
+              identifier
+              title
+              url
+              priority
+              updatedAt
+              state {
+                id
+                name
+                type
+              }
+              project {
+                id
+                name
+              }
+            }
+          }
+        }
+        """,
+        {
+            "issueId": issue_id,
+            "input": update_input,
+        },
+    )
+
+    payload = data.get("issueUpdate")
+    issue = payload.get("issue") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(issue, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the issue update."
+        )
+
+    state = issue.get("state")
+    project = issue.get("project")
+    priority = issue.get("priority")
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "issue_id": str(issue.get("id") or ""),
+        "identifier": str(issue.get("identifier") or ""),
+        "title": str(issue.get("title") or ""),
+        "url": str(issue.get("url") or ""),
+        "priority": (
+            int(priority)
+            if isinstance(priority, (int, float))
+            else 0
+        ),
+        "state_id": (
+            str(state.get("id") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "state_name": (
+            str(state.get("name") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "state_type": (
+            str(state.get("type") or "")
+            if isinstance(state, dict)
+            else ""
+        ),
+        "project_id": (
+            str(project.get("id") or "")
+            if isinstance(project, dict)
+            else ""
+        ),
+        "project_name": (
+            str(project.get("name") or "")
+            if isinstance(project, dict)
+            else ""
+        ),
+        "updated_at": str(issue.get("updatedAt") or ""),
+    }, None
+
+
+def linear_add_comment(inputs, stamp):
+    """
+    Add one Markdown comment to a Linear issue.
+
+    The returned body is reduced to a receipt-safe preview; the full comment
+    remains in Linear and is never duplicated into the signed receipt.
+    """
+    issue_id = inputs.get("issue_id")
+    body = inputs.get("body")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError(
+            "issue_id must be 200 characters or fewer."
+        )
+
+    if not isinstance(body, str) or not body.strip():
+        raise RuntimeError(
+            "body must be a non-empty string."
+        )
+
+    body = body.strip()
+
+    if len(body) > 100000:
+        raise RuntimeError(
+            "body must be 100000 characters or fewer."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallAddComment($input: CommentCreateInput!) {
+          commentCreate(input: $input) {
+            success
+            comment {
+              id
+              body
+              createdAt
+            }
+          }
+        }
+        """,
+        {
+            "input": {
+                "issueId": issue_id,
+                "body": body,
+            }
+        },
+    )
+
+    payload = data.get("commentCreate")
+    comment = payload.get("comment") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(comment, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm comment creation."
+        )
+
+    returned_body = comment.get("body")
+
+    if not isinstance(returned_body, str):
+        returned_body = ""
+
+    body_preview = returned_body[:200]
+
+    if len(returned_body) > len(body_preview):
+        body_preview += "…"
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "comment_id": str(comment.get("id") or ""),
+        "issue_id": issue_id,
+        "body_preview": body_preview,
+        "created_at": str(comment.get("createdAt") or ""),
+    }, None
+
