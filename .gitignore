@@ -1,0 +1,6 @@
+reference/
+.env
+*.key
+__pycache__/
+*.pyc
+.pytest_cache/

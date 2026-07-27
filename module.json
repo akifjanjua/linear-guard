@@ -1,0 +1,74 @@
+{
+  "id": "muhammad-akif-janjua/linear-guard",
+  "name": "Linear Guard",
+  "version": "1.0.0",
+  "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
+  "provider": "linear",
+  "description": "Governance-first Linear integration for safe reads and approval-controlled issue creation with signed RailCall receipts.",
+  "commands": [
+    {
+      "id": "linear.get_current_user",
+      "title": "Get Current Linear User",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "user_id": "string",
+        "name": "string",
+        "email": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_teams",
+      "title": "List Linear Teams",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "team_count": "number",
+        "teams_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.create_issue",
+      "title": "Create a Linear Issue",
+      "provider": "linear",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "issue_id": "string",
+        "identifier": "string",
+        "title": "string",
+        "url": "string",
+        "http_status": "number"
+      }
+    }
+  ]
+}
