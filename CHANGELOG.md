@@ -1,0 +1,33 @@
+# Changelog
+
+All notable Linear Guard changes are documented here.
+
+## 1.3.0
+
+- Added `linear.update_issue`.
+- Added `linear.add_comment`.
+- Applied `write_requires_approval` governance to all three mutating commands.
+- Added receipt-safe output for issue updates and comments.
+- Verified the complete preview → blocked → human approval → execution → signed receipt flow against the real Linear API.
+
+## 1.2.0
+
+- Added `linear.search_issues`.
+- Added `linear.get_issue`.
+- Added receipt-safe pagination for issue search output.
+- Verified retrieval by shorthand identifier such as `RAI-9`.
+
+## 1.1.1
+
+- Added `linear.list_projects`.
+- Added `linear.list_labels`.
+- Added `linear.list_workflow_states`.
+- Added receipt-safe pagination for workflow states.
+
+## 0.1.0-prototype
+
+- Added authenticated Linear user and team reads.
+- Added approval-controlled issue creation.
+- Implemented secure local credential loading.
+- Added verified Windows TLS fallback.
+- Verified signed RailCall receipts independently.

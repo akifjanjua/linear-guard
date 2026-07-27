@@ -1,0 +1,44 @@
+{
+  "endpoint": "http://127.0.0.1:8799",
+  "reads": {
+    "current_user": {
+      "http_status": 200,
+      "name_present": true,
+      "email_present": true
+    },
+    "teams": {
+      "count": 1,
+      "returned": 1
+    },
+    "projects": {
+      "count": 1,
+      "returned": 1
+    },
+    "labels": {
+      "count": 3,
+      "returned": 3
+    },
+    "workflow_states": {
+      "returned": 7
+    },
+    "issue": {
+      "identifier": "RAI-9",
+      "title_present": true,
+      "state": "Backlog"
+    },
+    "search": {
+      "returned": 2
+    }
+  },
+  "write_previews": {
+    "linear.create_issue": {
+      "response_received": true
+    },
+    "linear.update_issue": {
+      "response_received": true
+    },
+    "linear.add_comment": {
+      "response_received": true
+    }
+  }
+}
