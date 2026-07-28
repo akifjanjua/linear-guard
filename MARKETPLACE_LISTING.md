@@ -1,42 +1,15 @@
-# Marketplace Listing Copy
+Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue work without unrestricted write access.
 
-## Listing title
+It provides 10 focused commands: identify the current Linear user; list teams, projects, labels, and workflow states; search issues; retrieve a specific issue; create an issue; update an issue; and add a comment. The seven discovery and read commands are low risk. The three commands that change Linear use RailCall's preview → approve → execute flow, so no external write occurs until a human approves the exact payload.
 
-Linear Guard
+Typical uses include issue discovery and triage, preparing a new issue for the correct team, changing title, priority, workflow state, project, or description, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.
 
-## Short tagline
+Credentials are resolved exclusively through RailCall's `linear` vault provider. Linear Guard does not read RailCall credential files, does not use process environment variables, does not log the API key, and does not invoke curl or another subprocess. HTTPS requests use Python urllib with a certifi-backed verified SSL context.
 
-Governed Linear reads and approval-controlled issue writes with signed receipts.
+Linear-specific failures are handled honestly. The module checks GraphQL `errors` even when Linear responds with HTTP 200, reports authentication and rate-limit failures clearly, and never converts exceptions into successful-looking error data. Mutations are never automatically retried. If a network failure occurs before Linear confirms a write, the module reports that the outcome is unknown and tells the user to check Linear before retrying.
 
-## Full description
+Quick start: install the module, configure `LINEAR_API_KEY` in RailCall's Linear vault entry, then run `linear.get_current_user` or `linear.list_teams`. Preview create, update, and comment operations and approve them only after reviewing the exact payload.
 
-I built Linear Guard for teams that want AI-assisted Linear operations without allowing an agent to change work items silently.
+Known limitations: personal API keys act with the permissions of the Linear user who created them; issue search examines up to 100 recent matches; multi-record outputs use receipt-safe pagination.
 
-The module connects to the real Linear GraphQL API and includes ten practical commands: identify the current user, list teams, projects, labels and workflow states, search issues, retrieve an issue, create an issue, update issue fields and add comments.
-
-Reads execute immediately and generate signed receipts. Every create, update or comment request goes through RailCall's full airlock: preview the exact payload, block execution until a human approves it, execute only the approved action, then record the result in a signed receipt that can be independently verified.
-
-Credentials remain local to the RailCall station and are never returned in receipts. The module validates inputs, checks GraphQL errors even on HTTP 200 responses, handles rate limits honestly and keeps TLS verification enabled.
-
-A detailed README, release validator, safe smoke-test script and troubleshooting guide are included so a new user can install and verify the module quickly.
-
-`contest:2026Q3`
-
-## Recommended category
-
-Engineering / Project Management / Productivity
-
-## Recommended keywords
-
-Linear, issue tracking, project management, approval workflow, audit trail, governance, GraphQL, engineering operations
-
-## Pricing recommendation for the contest
-
-List it as **Free** during the contest and for at least the first 72 hours after publication. This removes purchase friction and gives reviewers and other users the easiest path to install and test it.
-
-## What buyers need
-
-- RailCall Station/Studio;
-- a Linear workspace;
-- a Linear personal API key;
-- permission to access the intended Linear teams and issues.
+contest:2026Q3

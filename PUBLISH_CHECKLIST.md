@@ -1,42 +1,53 @@
-# Publish Checklist
+# Linear Guard v1.4.0 Publish Checklist
 
-## A. Add the submission files to the real project
-
-Copy these files and folders into:
-
-```text
-C:\Users\Muhammad Akif Janjua\Projects\linear-guard
-```
-
-Do not overwrite your working `module.sig` until the module is re-signed locally.
-
-## B. Validate the release
-
-From Git Bash:
+## 1. Work on a separate branch
 
 ```bash
 cd ~/Projects/linear-guard
+git switch -c release/v1.4.0-security-hardening
+```
 
+Do not alter the published v1.3.0 tag.
+
+## 2. Install the transport dependency
+
+Use the same Python RailCall uses:
+
+```bash
+python -m pip install certifi
+python -c "import certifi; print(certifi.where())"
+```
+
+## 3. Run offline validation
+
+```bash
 python -m py_compile handlers/handler.py
 python -m json.tool module.json > /dev/null
 python tools/validate_release.py
+python tools/security_test.py
 ```
 
-Run the safe runtime test while Studio is running:
+Both scripts must end in PASS.
+
+## 4. Test with the real Linear API
+
+Start RailCall Studio, install the module from the project path, reload Modules, and run:
 
 ```bash
 python tools/smoke_test.py --issue RAI-9
 ```
 
-The smoke test performs reads and write previews only. It does not approve or execute writes.
+Expected: all seven reads pass; all three writes are previewed only; no write executes.
 
-## C. Re-sign after adding or changing signed files
+Then separately test one approved harmless update and confirm the matching signed receipt and real Linear result.
+
+## 5. Sign the exact release bytes
 
 ```bash
 python tools/sign_module.py
 ```
 
-Confirm:
+Expected:
 
 ```text
 Module signed successfully.
@@ -44,73 +55,48 @@ Signature verified locally.
 Signature bytes: 64
 ```
 
-## D. Build a clean local release archive
+Any later edit to `module.json` or `handlers/handler.py` requires signing again.
+
+## 6. Build the archive
 
 ```bash
 python tools/build_release.py
 ```
 
-The archive is written under `dist/` and excludes credentials, local receipts and temporary test output.
+Confirm the archive is `dist/linear-guard-v1.4.0.zip` and contains no credentials, receipts, approval codes, or local workspace files.
 
-## E. Final local module check
+## 7. Fresh buyer rehearsal
 
-Copy the newly signed files into the installed module directory, reload all modules and confirm:
+From outside the source directory:
 
-- version `1.3.0`;
-- signature verified;
-- one loaded;
-- zero rejected;
-- ten registered commands.
+1. install the published marketplace version;
+2. configure `LINEAR_API_KEY` through the Linear vault entry;
+3. run `linear.get_current_user`;
+4. search an issue;
+5. preview an update;
+6. approve one harmless update;
+7. verify the signed receipt.
 
-## F. Marketplace account
+Target: under five minutes with no manual editing of installed files.
 
-Confirm the marketplace dashboard shows:
+## 8. Listing metadata
 
-- active seller profile;
-- publisher key registered;
-- public creator profile completed;
-- email verified if required.
+Paste only the buyer-facing copy from `MARKETPLACE_LISTING.md`. Confirm:
 
-## G. Publish
+- version `1.4.0`;
+- `contest:2026Q3` remains present;
+- no template headings are visible;
+- homepage and tests URLs are valid;
+- `video_url` is an unlisted YouTube walkthrough when ready.
 
-From the project root:
+## 9. Publish once
 
 ```bash
 railcall market publish .
 ```
 
-Follow the review/publishing prompts. Do not publish from the `.railcall` folder or from a folder containing credentials.
+Do not repeatedly publish while debugging.
 
-## H. Listing description
+## 10. Reviewer reply
 
-Use the copy in `MARKETPLACE_LISTING.md` and ensure this exact tag appears:
-
-```text
-contest:2026Q3
-```
-
-## I. Pre-publish review
-
-Reviewers should be able to verify:
-
-- real Linear API calls;
-- ten useful actions;
-- local secret handling;
-- honest failures;
-- blocked writes before approval;
-- signed receipts;
-- installation and setup in under ten minutes.
-
-## J. Contest entry
-
-After the listing is public:
-
-1. copy the public marketplace listing URL;
-2. paste it into `CONTEST_SUBMISSION.md`;
-3. upload the selected evidence images to Freelancer;
-4. use the prepared title and description;
-5. submit before the contest deadline.
-
-## K. First 72 hours
-
-Share the public listing with relevant developers and ask them to install and test it honestly. Do not spam. Respond quickly to installation problems and record any fixes in the changelog.
+State that all three blockers were fixed: vault-only credentials, no curl/subprocess, and a complete auth manifest. Also mention secret redaction, no mutation retries, unknown-write handling, README cleanup, fresh-install timing, and the demo video.

@@ -29,6 +29,9 @@ EXPECTED_COMMANDS = {
 FORBIDDEN_SOURCE_PATTERNS = {
     "disabled TLS verification": r"\bCERT_NONE\b|check_hostname\s*=\s*False",
     "insecure curl option": r"(?<!\w)--insecure\b|(?<!\w)curl\s+-k\b",
+    "credential-file bypass": r"credentials\.local\.json|Path\.home\(\)",
+    "environment-secret bypass": r"os\.environ|os\.getenv",
+    "subprocess or curl fallback": r"\bsubprocess\b|\bshutil\b|_post_graphql_with_curl|_curl_config_quote",
     "probable embedded Linear token": r"\b(?:lin_api_|lin_oauth_|pat-)[A-Za-z0-9_-]{12,}\b",
     "probable private key block": r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
 }
@@ -66,6 +69,7 @@ def main() -> int:
         "version",
         "publisher_pubkey",
         "provider",
+        "auth",
         "description",
         "commands",
     }
@@ -78,6 +82,16 @@ def main() -> int:
 
     if manifest["provider"] != "linear":
         fail("provider must be linear")
+
+    expected_auth = {
+        "type": "api_key",
+        "vault_provider": "linear",
+        "header": "Authorization",
+        "secret_field": "LINEAR_API_KEY",
+        "docs": "https://linear.app/settings/api",
+    }
+    if manifest.get("auth") != expected_auth:
+        fail("auth block does not match the reviewer-required Linear vault declaration")
 
     if not re.fullmatch(r"\d+\.\d+\.\d+", str(manifest["version"])):
         fail("version must use semantic x.y.z form")
@@ -136,16 +150,42 @@ def main() -> int:
     if "https://api.linear.app/graphql" not in source:
         fail("Linear GraphQL endpoint not found")
 
+    if "vault_get(\"linear\")" not in source:
+        fail("vault_get('linear') is not used")
+
+    if "certifi.where()" not in source:
+        fail("certifi-backed SSL context is not configured")
+
+    if "is_write=True" not in source or "outcome is unknown" not in source:
+        fail("unknown-outcome handling for writes is missing")
+
     if "response.get(\"errors\")" not in source:
         fail("GraphQL errors array does not appear to be checked")
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    if len(readme.split()) > 500:
+        fail("README exceeds the contest's 500-word limit")
+
+    listing = (ROOT / "MARKETPLACE_LISTING.md").read_text(encoding="utf-8")
+    raw_template_headers = (
+        "## Listing title",
+        "## Short tagline",
+        "## Pricing recommendation",
+    )
+    if any(header in listing for header in raw_template_headers):
+        fail("marketplace listing still contains raw template headings")
+    if "contest:2026Q3" not in listing:
+        fail("marketplace listing is missing contest:2026Q3")
 
     print("PASS: module.json is valid")
     print("PASS: handler.py parses")
     print("PASS: 10 expected commands are present")
     print("PASS: all write commands require approval")
     print("PASS: previews and signed receipts are required")
-    print("PASS: no obvious embedded secrets or insecure TLS flags found")
-    print(f"PASS: Linear Guard {manifest['version']} is release-ready for signing")
+    print("PASS: reviewer-blocked credential and subprocess paths are absent")
+    print("PASS: vault-only auth, certifi TLS, and unknown-write handling are present")
+    print("PASS: README is within 500 words and listing copy is clean")
+    print(f"PASS: Linear Guard {manifest['version']} is ready for security tests and signing")
     return 0
 
 

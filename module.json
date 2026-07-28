@@ -1,9 +1,16 @@
 {
   "id": "muhammad-akif-janjua/linear-guard",
   "name": "Linear Guard",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
   "provider": "linear",
+  "auth": {
+    "type": "api_key",
+    "vault_provider": "linear",
+    "header": "Authorization",
+    "secret_field": "LINEAR_API_KEY",
+    "docs": "https://linear.app/settings/api"
+  },
   "description": "Governance-first Linear integration with safe discovery and issue reads, plus approval-controlled issue creation, updates, and comments with signed RailCall receipts.",
   "commands": [
     {

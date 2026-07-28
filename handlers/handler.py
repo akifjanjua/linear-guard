@@ -1,306 +1,125 @@
-"""
-Linear Guard for RailCall.
+"""Linear Guard — governed Linear operations for RailCall.
 
-Governed Linear module:
-- linear.get_current_user
-- linear.list_teams
-- linear.list_projects
-- linear.list_labels
-- linear.list_workflow_states
-- linear.search_issues
-- linear.get_issue
-- linear.create_issue
-- linear.update_issue
-- linear.add_comment
-
-The Linear API key is loaded from the RailCall vault entry named "linear".
-No credential is stored in this source file or returned in receipts.
+Credentials are resolved exclusively through RailCall's ``vault_get`` helper.
+All HTTPS calls use Python ``urllib`` with a certifi-backed SSL context.  The
+module never reads credential files, environment variables, or invokes an
+external process.
 """
 
 import json
-import shutil
-import subprocess
+import re
 import ssl
 import urllib.error
 import urllib.request
-from pathlib import Path
 
+try:
+    import certifi
+except ImportError:  # Module still loads; execution gives a clear fix.
+    certifi = None
 
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+_LINEAR_TOKEN_RE = re.compile(
+    r"\b(?:lin_api_|lin_oauth_|pat-)[A-Za-z0-9._-]{8,}\b",
+    re.IGNORECASE,
+)
+_AUTH_HEADER_RE = re.compile(
+    r"(?i)(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+"
+)
+_SECRET_FIELD_RE = re.compile(
+    r"(?i)(LINEAR_API_KEY\s*[:=]\s*)[^\s,;]+"
+)
+
+
+def _redact(value, *secrets):
+    """Return text with Linear credentials and auth headers removed."""
+    text = str(value or "")
+    for secret in secrets:
+        if isinstance(secret, str) and secret:
+            text = text.replace(secret, "[REDACTED]")
+    text = _LINEAR_TOKEN_RE.sub("[REDACTED]", text)
+    text = _AUTH_HEADER_RE.sub(r"\1[REDACTED]", text)
+    text = _SECRET_FIELD_RE.sub(r"\1[REDACTED]", text)
+    return text
+
+
 def _build_tls_context():
-    """
-    Build a verified HTTPS context using Python defaults plus the
-    native Windows ROOT and CA certificate stores.
-
-    This keeps hostname and certificate verification enabled and
-    requires no third-party Python package.
-    """
-    context = ssl.create_default_context()
-
-    enum_certificates = getattr(
-        ssl,
-        "enum_certificates",
-        None,
-    )
-
-    if enum_certificates is None:
-        return context
-
-    pem_certificates = []
-
-    for store_name in ("ROOT", "CA"):
-        try:
-            certificates = enum_certificates(store_name)
-        except OSError:
-            continue
-
-        for cert_bytes, encoding_type, trust in certificates:
-            if encoding_type != "x509_asn":
-                continue
-
-            try:
-                pem_certificates.append(
-                    ssl.DER_cert_to_PEM_cert(cert_bytes)
-                )
-            except (ValueError, ssl.SSLError):
-                continue
-
-    if pem_certificates:
-        context.load_verify_locations(
-            cadata="\n".join(pem_certificates)
+    """Build a verified SSL context using certifi's Mozilla CA bundle."""
+    if certifi is None:
+        raise RuntimeError(
+            "Linear Guard requires the certifi package for verified HTTPS. "
+            "Install it with: python -m pip install certifi"
         )
-
-    return context
-
-
-TLS_CONTEXT = _build_tls_context()
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def _extract_api_key(entry):
-    """Extract a Linear key from supported RailCall credential shapes."""
+    """Extract LINEAR_API_KEY from documented RailCall vault shapes."""
     if isinstance(entry, str):
         return entry.strip()
-
     if not isinstance(entry, dict):
         return ""
 
     fields = entry.get("fields")
-
     if isinstance(fields, dict):
-        for field_name in (
-            "LINEAR_API_KEY",
-            "api_key",
-            "token",
-        ):
-            value = fields.get(field_name)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-    for field_name in (
-        "LINEAR_API_KEY",
-        "api_key",
-        "token",
-    ):
-        value = entry.get(field_name)
+        value = fields.get("LINEAR_API_KEY")
         if isinstance(value, str) and value.strip():
             return value.strip()
 
+    value = entry.get("LINEAR_API_KEY")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return ""
 
 
 def _load_api_key():
-    """
-    Load the Linear key without placing it in source code or command inputs.
+    """Resolve the Linear key only through RailCall's vault abstraction."""
+    helpers = globals().get("__rc_helpers__")
+    if not isinstance(helpers, dict):
+        raise RuntimeError(
+            "RailCall did not provide module helpers; the Linear vault "
+            "cannot be accessed."
+        )
 
-    First supports RailCall's legacy provider vault helper. Then supports
-    station-v0.27's named integration credential store.
-    """
-    helpers = __rc_helpers__  # injected by RailCall
     vault_get = helpers.get("vault_get")
-
-    if callable(vault_get):
-        legacy_key = _extract_api_key(vault_get("linear"))
-
-        if legacy_key:
-            return legacy_key
-
-    credential_file = (
-        Path.home()
-        / ".railcall"
-        / "station"
-        / ".railcall_workspace"
-        / "credentials.local.json"
-    )
+    if not callable(vault_get):
+        raise RuntimeError(
+            "RailCall's vault_get helper is unavailable. Update RailCall "
+            "Station before using Linear Guard."
+        )
 
     try:
-        credential_store = json.loads(
-            credential_file.read_text(encoding="utf-8")
+        entry = vault_get("linear")
+    except Exception as exc:
+        raise RuntimeError(
+            "RailCall could not read the Linear vault entry."
+        ) from None
+
+    api_key = _extract_api_key(entry)
+    if not api_key:
+        raise RuntimeError(
+            "Linear credentials are not configured. Add LINEAR_API_KEY to "
+            "the RailCall vault entry for provider 'linear'."
         )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "No RailCall integration credential store was found."
-        ) from exc
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "RailCall's integration credential store could not be read."
-        ) from exc
+    return api_key
 
-    provider = credential_store.get("linear")
 
-    if not isinstance(provider, dict):
-        raise RuntimeError(
-            "No Linear integration credential is configured."
-        )
+def _network_error_message(exc, api_key):
+    reason = getattr(exc, "reason", exc)
+    detail = _redact(reason, api_key).strip()
+    return detail or type(exc).__name__
 
-    credentials = provider.get("credentials")
 
-    if not isinstance(credentials, dict):
-        raise RuntimeError(
-            "The Linear integration has no saved credentials."
-        )
-
-    default_id = provider.get("default")
-    candidates = []
-
-    if isinstance(default_id, str):
-        default_credential = credentials.get(default_id)
-
-        if isinstance(default_credential, dict):
-            candidates.append(default_credential)
-
-    for credential_id, credential in credentials.items():
-        if (
-            credential_id != default_id
-            and isinstance(credential, dict)
-        ):
-            candidates.append(credential)
-
-    for credential in candidates:
-        api_key = _extract_api_key(credential)
-
-        if api_key:
-            return api_key
-
+def _unknown_write_outcome(detail):
     raise RuntimeError(
-        "The configured Linear credential is missing LINEAR_API_KEY."
-    )
+        "Linear write outcome is unknown because no confirmed response was "
+        "received. Check Linear before retrying this action. "
+        f"Transport detail: {detail}"
+    ) from None
 
 
-def _curl_config_quote(value):
-    """
-    Escape text for curl config-file syntax.
-
-    The Linear API key is supplied through curl's standard input rather
-    than as a command-line argument.
-    """
-    return (
-        str(value)
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-        .replace("\t", "\\t")
-    )
-
-
-def _post_graphql_with_curl(api_key, request_body):
-    """
-    Perform a verified HTTPS request using the system curl executable.
-
-    curl continues to verify the server certificate and hostname.
-    """
-    curl_path = shutil.which("curl")
-
-    if not curl_path:
-        raise RuntimeError(
-            "Python TLS verification failed and curl is unavailable."
-        )
-
-    body_text = request_body.decode("utf-8")
-
-    config = "\n".join([
-        "silent",
-        "show-error",
-        'request = "POST"',
-        'url = "https://api.linear.app/graphql"',
-        'header = "Content-Type: application/json"',
-        (
-            'header = "Authorization: '
-            + _curl_config_quote(api_key)
-            + '"'
-        ),
-        (
-            'data = "'
-            + _curl_config_quote(body_text)
-            + '"'
-        ),
-        "connect-timeout = 10",
-        "max-time = 25",
-        (
-            'write-out = '
-            '"\\n__RAILCALL_HTTP_STATUS__:%{http_code}"'
-        ),
-    ]) + "\n"
-
-    try:
-        completed = subprocess.run(
-            [curl_path, "--config", "-"],
-            input=config.encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-            check=False,
-        )
-
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            "Linear request timed out while using curl."
-        ) from exc
-
-    except OSError as exc:
-        raise RuntimeError(
-            f"Could not start curl: {exc}"
-        ) from exc
-
-    if completed.returncode != 0:
-        error_text = completed.stderr.decode(
-            "utf-8",
-            errors="replace",
-        ).strip()
-
-        raise RuntimeError(
-            "Linear curl transport failed"
-            + (f": {error_text}" if error_text else ".")
-        )
-
-    marker = b"\n__RAILCALL_HTTP_STATUS__:"
-    response_body, separator, status_bytes = (
-        completed.stdout.rpartition(marker)
-    )
-
-    if not separator:
-        raise RuntimeError(
-            "curl returned no HTTP status marker."
-        )
-
-    try:
-        status = int(status_bytes.strip())
-    except ValueError as exc:
-        raise RuntimeError(
-            "curl returned an invalid HTTP status."
-        ) from exc
-
-    return status, response_body.rstrip(b"\r\n")
-
-
-def _post_graphql(api_key, request_body):
-    """
-    Try Python's verified TLS connection first.
-
-    On a Windows certificate-chain verification failure, retry through
-    system curl with certificate verification still enabled.
-    """
+def _post_graphql(api_key, request_body, *, is_write=False):
+    """Send one verified HTTPS request. No command is retried here."""
     request = urllib.request.Request(
         LINEAR_GRAPHQL_URL,
         data=request_body,
@@ -314,63 +133,43 @@ def _post_graphql(api_key, request_body):
     try:
         with urllib.request.urlopen(
             request,
-            timeout=20,
-            context=TLS_CONTEXT,
+            timeout=25,
+            context=_build_tls_context(),
         ) as response:
             return int(response.getcode()), response.read()
-
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read()
-
-    except urllib.error.URLError as exc:
-        reason_text = str(exc.reason)
-
-        certificate_failure = (
-            isinstance(
-                exc.reason,
-                ssl.SSLCertVerificationError,
-            )
-            or "CERTIFICATE_VERIFY_FAILED" in reason_text
-            or "certificate has expired" in reason_text.lower()
-        )
-
-        if certificate_failure:
-            return _post_graphql_with_curl(
-                api_key,
-                request_body,
-            )
-
-        raise RuntimeError(
-            f"Linear network error: {exc.reason}"
-        ) from exc
+    except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as exc:
+        detail = _network_error_message(exc, api_key)
+        if is_write:
+            _unknown_write_outcome(detail)
+        raise RuntimeError(f"Linear network error: {detail}") from None
 
 
-def _graphql(query, variables=None):
+def _graphql(query, variables=None, *, is_write=False):
     api_key = _load_api_key()
-
     request_body = json.dumps(
-        {
-            "query": query,
-            "variables": variables or {},
-        }
+        {"query": query, "variables": variables or {}},
+        separators=(",", ":"),
+        ensure_ascii=False,
     ).encode("utf-8")
 
     status, response_bytes = _post_graphql(
         api_key,
         request_body,
+        is_write=is_write,
     )
 
     try:
-        response = json.loads(
-            response_bytes.decode("utf-8")
-        )
-    except Exception as exc:
+        response = json.loads(response_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        if is_write and 200 <= status < 300:
+            _unknown_write_outcome("Linear returned an unreadable success response.")
         raise RuntimeError(
-            f"Linear returned an unreadable response "
-            f"(HTTP {status})."
+            f"Linear returned an unreadable response (HTTP {status})."
         ) from exc
 
-    errors = response.get("errors")
+    errors = response.get("errors") if isinstance(response, dict) else None
 
     if status == 429:
         raise RuntimeError(
@@ -379,15 +178,12 @@ def _graphql(query, variables=None):
 
     if status < 200 or status >= 300:
         message = ""
-
-        if isinstance(errors, list) and errors:
-            first_error = errors[0]
-
-            if isinstance(first_error, dict):
-                message = str(
-                    first_error.get("message") or ""
-                )
-
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            message = _redact(errors[0].get("message") or "", api_key)
+        if is_write and status >= 500:
+            _unknown_write_outcome(
+                f"Linear returned HTTP {status} without confirming the mutation."
+            )
         raise RuntimeError(
             f"Linear API request failed with HTTP {status}"
             + (f": {message}" if message else ".")
@@ -395,41 +191,31 @@ def _graphql(query, variables=None):
 
     if isinstance(errors, list) and errors:
         messages = []
-
         for error in errors[:3]:
             if not isinstance(error, dict):
                 continue
-
-            message = str(
-                error.get("message")
-                or "Unknown GraphQL error"
+            message = _redact(
+                error.get("message") or "Unknown GraphQL error",
+                api_key,
             )
-
             extensions = error.get("extensions")
             code = ""
-
             if isinstance(extensions, dict):
-                code = str(
-                    extensions.get("code") or ""
-                )
-
-            messages.append(
-                f"{message} [{code}]"
-                if code
-                else message
+                code = _redact(extensions.get("code") or "", api_key)
+            messages.append(f"{message} [{code}]" if code else message)
+        detail = "; ".join(messages) or "Unknown GraphQL error"
+        if is_write:
+            raise RuntimeError(
+                "Linear did not confirm the write because GraphQL returned "
+                f"errors. Check Linear before retrying: {detail}"
             )
+        raise RuntimeError("Linear GraphQL error: " + detail)
 
-        raise RuntimeError(
-            "Linear GraphQL error: "
-            + "; ".join(messages)
-        )
-
-    data = response.get("data")
-
+    data = response.get("data") if isinstance(response, dict) else None
     if not isinstance(data, dict):
-        raise RuntimeError(
-            "Linear returned no usable data."
-        )
+        if is_write:
+            _unknown_write_outcome("Linear returned no usable mutation data.")
+        raise RuntimeError("Linear returned no usable data.")
 
     return status, data
 
@@ -1022,12 +808,22 @@ def linear_create_issue(inputs, stamp):
             "title must be a non-empty string."
         )
 
+    team_id = team_id.strip()
+    title = title.strip()
+
+    if len(team_id) > 200:
+        raise RuntimeError("team_id must be 200 characters or fewer.")
+    if len(title) > 255:
+        raise RuntimeError("title must be 255 characters or fewer.")
+
     if description is None:
         description = ""
     if not isinstance(description, str):
         raise RuntimeError(
             "description must be a string."
         )
+    if len(description) > 100000:
+        raise RuntimeError("description must be 100000 characters or fewer.")
 
     status, data = _graphql(
         """
@@ -1045,11 +841,12 @@ def linear_create_issue(inputs, stamp):
         """,
         {
             "input": {
-                "teamId": team_id.strip(),
-                "title": title.strip(),
+                "teamId": team_id,
+                "title": title,
                 "description": description,
             }
         },
+        is_write=True,
     )
 
     payload = data.get("issueCreate")
@@ -1137,7 +934,10 @@ def linear_update_issue(inputs, stamp):
                 "state_id must be a non-empty Linear workflow-state UUID."
             )
 
-        update_input["stateId"] = state_id.strip()
+        state_id = state_id.strip()
+        if len(state_id) > 200:
+            raise RuntimeError("state_id must be 200 characters or fewer.")
+        update_input["stateId"] = state_id
 
     if "project_id" in inputs:
         project_id = inputs.get("project_id")
@@ -1147,7 +947,10 @@ def linear_update_issue(inputs, stamp):
                 "project_id must be a non-empty Linear project UUID."
             )
 
-        update_input["projectId"] = project_id.strip()
+        project_id = project_id.strip()
+        if len(project_id) > 200:
+            raise RuntimeError("project_id must be 200 characters or fewer.")
+        update_input["projectId"] = project_id
 
     if "priority" in inputs:
         priority = inputs.get("priority")
@@ -1209,6 +1012,7 @@ def linear_update_issue(inputs, stamp):
             "issueId": issue_id,
             "input": update_input,
         },
+        is_write=True,
     )
 
     payload = data.get("issueUpdate")
@@ -1322,6 +1126,7 @@ def linear_add_comment(inputs, stamp):
                 "body": body,
             }
         },
+        is_write=True,
     )
 
     payload = data.get("commentCreate")

@@ -2,6 +2,17 @@
 
 All notable Linear Guard changes are documented here.
 
+## 1.4.0
+
+- Resolve Linear credentials exclusively through RailCall `vault_get`.
+- Remove direct credential-file access and all curl/subprocess networking.
+- Use `urllib.request` with a certifi-backed verified SSL context.
+- Declare API-key authentication in `module.json`.
+- Add active credential redaction to translated errors.
+- Never automatically retry mutations; fail loudly on unknown outcomes.
+- Strengthen create/update input validation and security tests.
+- Rewrite the README and marketplace description for a fast buyer setup.
+
 ## 1.3.0
 
 - Added `linear.update_issue`.

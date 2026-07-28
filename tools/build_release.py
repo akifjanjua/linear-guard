@@ -18,6 +18,7 @@ REQUIRED = [
     "README.md",
     "CHANGELOG.md",
     "SECURITY.md",
+    "requirements.txt",
 ]
 
 OPTIONAL = [
@@ -28,6 +29,7 @@ OPTIONAL = [
     "docs/TROUBLESHOOTING.md",
     "tools/validate_release.py",
     "tools/smoke_test.py",
+    "tools/security_test.py",
 ]
 
 FORBIDDEN_NAMES = {

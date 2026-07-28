@@ -4,3 +4,5 @@ reference/
 __pycache__/
 *.pyc
 .pytest_cache/
+dist/
+linear-guard-smoke-report.json
