@@ -1,7 +1,7 @@
 {
   "id": "muhammad-akif-janjua/linear-guard",
   "name": "Linear Guard",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
   "provider": "linear",
   "auth": {
@@ -11,7 +11,7 @@
     "secret_field": "LINEAR_API_KEY",
     "docs": "https://linear.app/settings/api"
   },
-  "description": "Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue management without silent or unrestricted changes.\n\nIt provides 10 focused commands for the real Linear API: identify the current user; list teams, projects, labels, and workflow states; search issues; retrieve a specific issue; create an issue; update an issue; and add a comment.\n\nThe seven discovery and read commands are low-risk. The three commands that change Linear use RailCall's preview → approve → execute flow. A create, update, or comment request is shown for review first, and Linear is not changed until a human approves the exact payload.\n\nTypical uses include finding and triaging issues, discovering the correct team or workflow state, preparing a new issue, changing an issue's title, description, priority, project, or status, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.\n\nLinear Guard uses the real Linear GraphQL API with no mocks or stubs. It checks Linear GraphQL errors even when the HTTP response is 200, reports authentication and rate-limit failures clearly, and does not present failed operations as successful results.\n\nQuick start: install Linear Guard from the marketplace, configure a Linear personal API key through RailCall Studio → Integrations → Linear, reload Modules, and run linear.get_current_user or linear.list_teams. Preview all create, update, and comment actions before approving them.\n\nKnown limitations: personal API keys operate with the permissions of the Linear user who created them. Search results are capped and paginated to remain readable in RailCall receipts.\n\nBuilt for the RailCall Track A module contest.\n\ncontest:2026Q3",
+  "description": "Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue management without silent or unrestricted changes.\n\nIt provides 13 focused commands for the real Linear API: identify the current user; list teams, projects, labels, workflow states, workspace members, and team cycles; search and retrieve issues; analyze sprint health; create issues; update issues; and add comments.\n\nThe ten discovery, reporting, and read commands are low-risk. The three commands that change Linear use RailCall's preview → approve → execute flow. A create, update, or comment request is shown for review first, and Linear is not changed until a human approves the exact payload.\n\nTypical uses include finding and triaging issues, discovering the correct team or workflow state, preparing a new issue, changing an issue's title, description, priority, project, or status, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.\n\nLinear Guard uses the real Linear GraphQL API with no mocks or stubs. It checks Linear GraphQL errors even when the HTTP response is 200, reports authentication and rate-limit failures clearly, and does not present failed operations as successful results.\n\nQuick start: install Linear Guard from the marketplace, configure a Linear personal API key through RailCall Studio → Integrations → Linear, reload Modules, and run linear.get_current_user or linear.list_teams. Preview all create, update, and comment actions before approving them.\n\nKnown limitations: personal API keys operate with the permissions of the Linear user who created them. Search results are capped and paginated to remain readable in RailCall receipts.\n\nBuilt for the RailCall Track A module contest.\n\ncontest:2026Q3",
   "commands": [
     {
       "id": "linear.get_current_user",
@@ -281,6 +281,97 @@
         "issue_id": "string",
         "body_preview": "string",
         "created_at": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_members",
+      "title": "List Linear Workspace Members",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "member_count": "number",
+        "members_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.list_cycles",
+      "title": "List Linear Team Cycles",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": true
+        },
+        "offset": {
+          "type": "number",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "team_id": "string",
+        "team_name": "string",
+        "team_key": "string",
+        "cycle_count": "number",
+        "returned_count": "number",
+        "next_offset": "number",
+        "has_more": "boolean",
+        "cycles_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.sprint_health",
+      "title": "Analyze Linear Sprint Health",
+      "provider": "linear",
+      "risk": "low",
+      "mode": "read",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "cycle_id": {
+          "type": "string",
+          "required": true
+        },
+        "stale_days": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "cycle_id": "string",
+        "cycle_number": "number",
+        "cycle_name": "string",
+        "team_id": "string",
+        "team_name": "string",
+        "total_issues": "number",
+        "completed_issues": "number",
+        "completion_percent": "number",
+        "unassigned_issues": "number",
+        "high_or_urgent_issues": "number",
+        "without_estimate": "number",
+        "without_labels": "number",
+        "stale_issues": "number",
+        "result_cap_reached": "boolean",
+        "state_counts_json": "string",
+        "warnings_json": "string",
+        "attention_issues_json": "string",
         "http_status": "number"
       }
     }

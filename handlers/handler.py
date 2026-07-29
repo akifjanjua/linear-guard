@@ -9,6 +9,7 @@ external process.
 import json
 import re
 import ssl
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 
@@ -1159,5 +1160,426 @@ def linear_add_comment(inputs, stamp):
         "issue_id": issue_id,
         "body_preview": body_preview,
         "created_at": str(comment.get("createdAt") or ""),
+    }, None
+
+
+def _bounded_integer(value, name, *, default, minimum, maximum):
+    """Coerce one bounded integer without accepting booleans."""
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        raise RuntimeError(
+            f"{name} must be an integer between {minimum} and {maximum}."
+        )
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"{name} must be an integer between {minimum} and {maximum}."
+        ) from exc
+    if result < minimum or result > maximum:
+        raise RuntimeError(
+            f"{name} must be between {minimum} and {maximum}."
+        )
+    return result
+
+
+def _parse_linear_datetime(value):
+    """Parse a Linear ISO-8601 timestamp, returning None when unavailable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def linear_list_members(inputs, stamp):
+    """List up to 100 Linear workspace members for governed assignment flows."""
+    status, data = _graphql(
+        """
+        query RailCallWorkspaceMembers {
+          users(first: 100) {
+            nodes {
+              id
+              name
+              email
+            }
+          }
+        }
+        """
+    )
+
+    connection = data.get("users")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    if not isinstance(nodes, list):
+        raise RuntimeError("Linear did not return a workspace-member list.")
+
+    members = []
+    for member in nodes:
+        if not isinstance(member, dict):
+            continue
+        members.append({
+            "id": str(member.get("id") or ""),
+            "name": str(member.get("name") or "")[:100],
+            "email": str(member.get("email") or "")[:200],
+        })
+
+    members.sort(key=lambda item: (item["name"].lower(), item["email"].lower()))
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "member_count": len(members),
+        "members_json": json.dumps(
+            members,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }, None
+
+
+def linear_list_cycles(inputs, stamp):
+    """List receipt-safe pages of cycles for one Linear team."""
+    team_id = inputs.get("team_id")
+    if not isinstance(team_id, str) or not team_id.strip():
+        raise RuntimeError("team_id must be a non-empty Linear team UUID.")
+    team_id = team_id.strip()
+    if len(team_id) > 200:
+        raise RuntimeError("team_id must be 200 characters or fewer.")
+
+    offset = _bounded_integer(
+        inputs.get("offset"),
+        "offset",
+        default=0,
+        minimum=0,
+        maximum=1000,
+    )
+    limit = _bounded_integer(
+        inputs.get("limit"),
+        "limit",
+        default=10,
+        minimum=1,
+        maximum=25,
+    )
+
+    status, data = _graphql(
+        """
+        query RailCallTeamCycles($teamId: String!) {
+          team(id: $teamId) {
+            id
+            name
+            key
+            cycles(first: 100) {
+              nodes {
+                id
+                number
+                name
+                startsAt
+                endsAt
+                completedAt
+              }
+            }
+          }
+        }
+        """,
+        {"teamId": team_id},
+    )
+
+    team = data.get("team")
+    if not isinstance(team, dict):
+        raise RuntimeError(f"Linear team {team_id!r} was not found.")
+    connection = team.get("cycles")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    if not isinstance(nodes, list):
+        raise RuntimeError("Linear did not return a cycle list for the team.")
+
+    cycles = []
+    now = datetime.now(timezone.utc)
+    for cycle in nodes:
+        if not isinstance(cycle, dict):
+            continue
+        starts_at = str(cycle.get("startsAt") or "")
+        ends_at = str(cycle.get("endsAt") or "")
+        completed_at = str(cycle.get("completedAt") or "")
+        start_dt = _parse_linear_datetime(starts_at)
+        end_dt = _parse_linear_datetime(ends_at)
+        if completed_at:
+            phase = "completed"
+        elif start_dt and end_dt and start_dt <= now <= end_dt:
+            phase = "active"
+        elif start_dt and start_dt > now:
+            phase = "upcoming"
+        else:
+            phase = "past"
+        number = cycle.get("number")
+        cycles.append({
+            "id": str(cycle.get("id") or ""),
+            "number": int(number) if isinstance(number, (int, float)) else 0,
+            "name": str(cycle.get("name") or "")[:100],
+            "phase": phase,
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+        })
+
+    cycles.sort(
+        key=lambda item: (
+            _parse_linear_datetime(item["starts_at"])
+            or datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True,
+    )
+    page = cycles[offset:offset + limit]
+    next_offset = offset + len(page)
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "team_id": str(team.get("id") or ""),
+        "team_name": str(team.get("name") or ""),
+        "team_key": str(team.get("key") or ""),
+        "cycle_count": len(cycles),
+        "returned_count": len(page),
+        "next_offset": next_offset,
+        "has_more": next_offset < len(cycles),
+        "cycles_json": json.dumps(
+            page,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }, None
+
+
+def linear_sprint_health(inputs, stamp):
+    """Summarize the health of one Linear cycle without changing Linear."""
+    cycle_id = inputs.get("cycle_id")
+    if not isinstance(cycle_id, str) or not cycle_id.strip():
+        raise RuntimeError("cycle_id must be a non-empty Linear cycle UUID.")
+    cycle_id = cycle_id.strip()
+    if len(cycle_id) > 200:
+        raise RuntimeError("cycle_id must be 200 characters or fewer.")
+
+    stale_days = _bounded_integer(
+        inputs.get("stale_days"),
+        "stale_days",
+        default=7,
+        minimum=1,
+        maximum=90,
+    )
+
+    status, data = _graphql(
+        """
+        query RailCallSprintHealth($cycleId: String!) {
+          cycle(id: $cycleId) {
+            id
+            number
+            name
+            startsAt
+            endsAt
+            completedAt
+            team {
+              id
+              name
+              key
+            }
+            issues(first: 100) {
+              nodes {
+                id
+                identifier
+                title
+                priority
+                estimate
+                updatedAt
+                state {
+                  id
+                  name
+                  type
+                }
+                assignee {
+                  id
+                  name
+                }
+                labels(first: 20) {
+                  nodes {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+        """,
+        {"cycleId": cycle_id},
+    )
+
+    cycle = data.get("cycle")
+    if not isinstance(cycle, dict):
+        raise RuntimeError(f"Linear cycle {cycle_id!r} was not found.")
+    team = cycle.get("team")
+    connection = cycle.get("issues")
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    if not isinstance(nodes, list):
+        raise RuntimeError("Linear did not return issues for the cycle.")
+
+    now = datetime.now(timezone.utc)
+    stale_before = now - timedelta(days=stale_days)
+    terminal_types = {"completed", "canceled", "cancelled"}
+    counts = {
+        "total": 0,
+        "backlog": 0,
+        "unstarted": 0,
+        "started": 0,
+        "completed": 0,
+        "canceled": 0,
+        "unassigned": 0,
+        "high_or_urgent": 0,
+        "without_estimate": 0,
+        "without_labels": 0,
+        "stale": 0,
+    }
+    attention = []
+
+    for issue in nodes:
+        if not isinstance(issue, dict):
+            continue
+        counts["total"] += 1
+        state = issue.get("state")
+        state_type = (
+            str(state.get("type") or "").lower()
+            if isinstance(state, dict)
+            else ""
+        )
+        if state_type == "backlog":
+            counts["backlog"] += 1
+        elif state_type == "unstarted":
+            counts["unstarted"] += 1
+        elif state_type == "started":
+            counts["started"] += 1
+        elif state_type == "completed":
+            counts["completed"] += 1
+        elif state_type in {"canceled", "cancelled"}:
+            counts["canceled"] += 1
+
+        assignee = issue.get("assignee")
+        labels = issue.get("labels")
+        label_nodes = labels.get("nodes") if isinstance(labels, dict) else None
+        priority = issue.get("priority")
+        estimate = issue.get("estimate")
+        updated_at = _parse_linear_datetime(issue.get("updatedAt"))
+
+        reasons = []
+        if not isinstance(assignee, dict):
+            counts["unassigned"] += 1
+            reasons.append("unassigned")
+        if isinstance(priority, (int, float)) and int(priority) in {1, 2}:
+            counts["high_or_urgent"] += 1
+            reasons.append("high_or_urgent")
+        if not isinstance(estimate, (int, float)) or float(estimate) <= 0:
+            counts["without_estimate"] += 1
+            reasons.append("no_estimate")
+        if not isinstance(label_nodes, list) or not label_nodes:
+            counts["without_labels"] += 1
+            reasons.append("no_labels")
+        if (
+            state_type not in terminal_types
+            and updated_at is not None
+            and updated_at < stale_before
+        ):
+            counts["stale"] += 1
+            reasons.append("stale")
+
+        if reasons and len(attention) < 15:
+            attention.append({
+                "identifier": str(issue.get("identifier") or ""),
+                "title": str(issue.get("title") or "")[:100],
+                "state": (
+                    str(state.get("name") or "")
+                    if isinstance(state, dict)
+                    else ""
+                ),
+                "reasons": reasons,
+            })
+
+    non_canceled = max(0, counts["total"] - counts["canceled"])
+    completion_percent = (
+        round((counts["completed"] / non_canceled) * 100, 1)
+        if non_canceled
+        else 0.0
+    )
+    warnings = []
+    if counts["unassigned"]:
+        warnings.append(f"{counts['unassigned']} issue(s) are unassigned")
+    if counts["high_or_urgent"]:
+        warnings.append(
+            f"{counts['high_or_urgent']} issue(s) are high or urgent priority"
+        )
+    if counts["stale"]:
+        warnings.append(
+            f"{counts['stale']} open issue(s) have not changed in {stale_days}+ days"
+        )
+    if counts["without_estimate"]:
+        warnings.append(f"{counts['without_estimate']} issue(s) have no estimate")
+    if counts["without_labels"]:
+        warnings.append(f"{counts['without_labels']} issue(s) have no labels")
+
+    cycle_number = (
+        int(cycle.get("number"))
+        if isinstance(cycle.get("number"), (int, float))
+        else 0
+    )
+    cycle_name = str(cycle.get("name") or "").strip()
+    if not cycle_name:
+        cycle_name = f"Cycle {cycle_number}" if cycle_number else "Unnamed cycle"
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "cycle_id": str(cycle.get("id") or ""),
+        "cycle_number": cycle_number,
+        "cycle_name": cycle_name,
+        "team_id": str(team.get("id") or "") if isinstance(team, dict) else "",
+        "team_name": (
+            str(team.get("name") or "") if isinstance(team, dict) else ""
+        ),
+        "total_issues": counts["total"],
+        "completed_issues": counts["completed"],
+        "completion_percent": completion_percent,
+        "unassigned_issues": counts["unassigned"],
+        "high_or_urgent_issues": counts["high_or_urgent"],
+        "without_estimate": counts["without_estimate"],
+        "without_labels": counts["without_labels"],
+        "stale_issues": counts["stale"],
+        "result_cap_reached": counts["total"] >= 100,
+        "state_counts_json": json.dumps(
+            {
+                key: counts[key]
+                for key in (
+                    "backlog",
+                    "unstarted",
+                    "started",
+                    "completed",
+                    "canceled",
+                )
+            },
+            separators=(",", ":"),
+        ),
+        "warnings_json": json.dumps(
+            warnings,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "attention_issues_json": json.dumps(
+            attention,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
     }, None
 

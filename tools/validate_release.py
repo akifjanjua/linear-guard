@@ -24,6 +24,9 @@ EXPECTED_COMMANDS = {
     "linear.create_issue": "write_requires_approval",
     "linear.update_issue": "write_requires_approval",
     "linear.add_comment": "write_requires_approval",
+    "linear.list_members": "read",
+    "linear.list_cycles": "read",
+    "linear.sprint_health": "read",
 }
 
 FORBIDDEN_SOURCE_PATTERNS = {
@@ -179,7 +182,7 @@ def main() -> int:
 
     print("PASS: module.json is valid")
     print("PASS: handler.py parses")
-    print("PASS: 10 expected commands are present")
+    print("PASS: 13 expected commands are present")
     print("PASS: all write commands require approval")
     print("PASS: previews and signed receipts are required")
     print("PASS: reviewer-blocked credential and subprocess paths are absent")
