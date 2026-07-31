@@ -2,6 +2,9 @@
 
 - Added `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
 - Added `linear.triage_issue`, a preflighted single-consent composite for bounded issue triage.
+- Added `linear.plan_sprint`, an atomic 2–5 issue sprint-planning composite using Linear `issueBatchCreate`.
+- Added sprint-wide preflight validation, one-request blast-radius evidence, and deterministic created-issue mapping.
+- Kept nested created-issue receipt evidence URL-free so RailCall redaction cannot corrupt its JSON structure.
 - Added exact reference validation, no-op rejection, label-set limits, and honest partial-failure reporting.
 
 # Changelog

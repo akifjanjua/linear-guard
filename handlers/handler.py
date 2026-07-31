@@ -9,6 +9,7 @@ external process.
 import json
 import re
 import ssl
+import uuid
 from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
@@ -1770,6 +1771,620 @@ def linear_triage_issue(inputs, stamp):
         "triage_note_added": bool(triage_note),
         "comment_id": comment_id,
         "preflight_http_status": preflight_status,
+    }, None
+
+
+def _parse_sprint_plan_issues_json(value):
+    """Parse a bounded multi-issue sprint plan from one exact JSON payload."""
+    if not isinstance(value, str):
+        raise RuntimeError("issues_json must be a JSON array string.")
+    if len(value) > 40000:
+        raise RuntimeError("issues_json must be 40000 characters or fewer.")
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "issues_json must be valid JSON containing 2 to 5 issue objects."
+        ) from exc
+    if not isinstance(parsed, list):
+        raise RuntimeError("issues_json must decode to a JSON array.")
+    if len(parsed) < 2 or len(parsed) > 5:
+        raise RuntimeError("issues_json must contain between 2 and 5 issues.")
+
+    allowed_fields = {
+        "title",
+        "description",
+        "priority",
+        "estimate",
+        "assignee_id",
+        "label_ids",
+    }
+    normalized = []
+    seen_titles = set()
+    total_description_chars = 0
+
+    for index, item in enumerate(parsed, start=1):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"issues_json item {index} must be an object.")
+        unknown = sorted(set(item) - allowed_fields)
+        if unknown:
+            raise RuntimeError(
+                f"issues_json item {index} contains unsupported field(s): "
+                + ", ".join(unknown)
+            )
+
+        title = item.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise RuntimeError(
+                f"issues_json item {index} requires a non-empty title."
+            )
+        title = title.strip()
+        if len(title) > 255:
+            raise RuntimeError(
+                f"issues_json item {index} title must be 255 characters or fewer."
+            )
+        title_key = title.casefold()
+        if title_key in seen_titles:
+            raise RuntimeError("issues_json issue titles must be unique within the plan.")
+        seen_titles.add(title_key)
+
+        description = item.get("description", "")
+        if description is None:
+            description = ""
+        if not isinstance(description, str):
+            raise RuntimeError(
+                f"issues_json item {index} description must be a string."
+            )
+        if len(description) > 10000:
+            raise RuntimeError(
+                f"issues_json item {index} description must be 10000 characters or fewer."
+            )
+        total_description_chars += len(description)
+        if total_description_chars > 25000:
+            raise RuntimeError(
+                "The combined issue descriptions must be 25000 characters or fewer."
+            )
+
+        priority = None
+        if "priority" in item:
+            raw_priority = item.get("priority")
+            if isinstance(raw_priority, bool):
+                raise RuntimeError(
+                    f"issues_json item {index} priority must be an integer from 0 to 4."
+                )
+            try:
+                priority = int(raw_priority)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"issues_json item {index} priority must be an integer from 0 to 4."
+                ) from exc
+            if priority < 0 or priority > 4:
+                raise RuntimeError(
+                    f"issues_json item {index} priority must be between 0 and 4."
+                )
+
+        estimate = None
+        if "estimate" in item:
+            raw_estimate = item.get("estimate")
+            if isinstance(raw_estimate, bool):
+                raise RuntimeError(
+                    f"issues_json item {index} estimate must be an integer from 0 to 100."
+                )
+            try:
+                estimate = int(raw_estimate)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"issues_json item {index} estimate must be an integer from 0 to 100."
+                ) from exc
+            if estimate < 0 or estimate > 100:
+                raise RuntimeError(
+                    f"issues_json item {index} estimate must be between 0 and 100."
+                )
+
+        assignee_id = item.get("assignee_id")
+        if assignee_id is not None:
+            if not isinstance(assignee_id, str) or not assignee_id.strip():
+                raise RuntimeError(
+                    f"issues_json item {index} assignee_id must be a non-empty UUID."
+                )
+            assignee_id = assignee_id.strip()
+            if len(assignee_id) > 200:
+                raise RuntimeError("Assignee UUIDs must be 200 characters or fewer.")
+
+        raw_label_ids = item.get("label_ids", [])
+        if raw_label_ids is None:
+            raw_label_ids = []
+        if not isinstance(raw_label_ids, list):
+            raise RuntimeError(
+                f"issues_json item {index} label_ids must be a JSON array."
+            )
+        if len(raw_label_ids) > 5:
+            raise RuntimeError(
+                f"issues_json item {index} may contain at most 5 labels."
+            )
+        label_ids = []
+        seen_labels = set()
+        for label_index, label_id in enumerate(raw_label_ids, start=1):
+            if not isinstance(label_id, str) or not label_id.strip():
+                raise RuntimeError(
+                    f"issues_json item {index} label {label_index} must be a non-empty UUID."
+                )
+            label_id = label_id.strip()
+            if len(label_id) > 200:
+                raise RuntimeError("Label UUIDs must be 200 characters or fewer.")
+            if label_id not in seen_labels:
+                seen_labels.add(label_id)
+                label_ids.append(label_id)
+
+        normalized.append({
+            "request_index": index,
+            "title": title,
+            "description": description,
+            "priority": priority,
+            "estimate": estimate,
+            "assignee_id": assignee_id,
+            "label_ids": label_ids,
+        })
+
+    unique_assignees = {
+        issue["assignee_id"]
+        for issue in normalized
+        if issue["assignee_id"] is not None
+    }
+    unique_labels = {
+        label_id
+        for issue in normalized
+        for label_id in issue["label_ids"]
+    }
+    if len(unique_assignees) > 5:
+        raise RuntimeError("A sprint plan may reference at most 5 assignees.")
+    if len(unique_labels) > 20:
+        raise RuntimeError("A sprint plan may reference at most 20 unique labels.")
+
+    return normalized
+
+
+def linear_plan_sprint(inputs, stamp):
+    """Create a bounded sprint issue set in one Linear transaction."""
+    team_id = _optional_linear_id(inputs, "team_id", "Linear team UUID")
+    cycle_id = _optional_linear_id(inputs, "cycle_id", "Linear cycle UUID")
+    project_id = _optional_linear_id(inputs, "project_id", "Linear project UUID")
+    state_id = _optional_linear_id(
+        inputs,
+        "state_id",
+        "Linear workflow-state UUID",
+    )
+    parent_issue_id = _optional_linear_id(
+        inputs,
+        "parent_issue_id",
+        "parent Linear issue UUID or identifier",
+    )
+    if team_id is None:
+        raise RuntimeError("team_id must be a non-empty Linear team UUID.")
+    if cycle_id is None:
+        raise RuntimeError("cycle_id must be a non-empty Linear cycle UUID.")
+
+    issues = _parse_sprint_plan_issues_json(inputs.get("issues_json"))
+    assignee_ids = sorted({
+        issue["assignee_id"]
+        for issue in issues
+        if issue["assignee_id"] is not None
+    })
+    label_ids = sorted({
+        label_id
+        for issue in issues
+        for label_id in issue["label_ids"]
+    })
+
+    variable_definitions = ["$teamId: String!", "$cycleId: String!"]
+    query_fields = [
+        "team: team(id: $teamId) { id name key }",
+        (
+            "cycle: cycle(id: $cycleId) { id number name startsAt endsAt "
+            "completedAt team { id name } }"
+        ),
+    ]
+    variables = {"teamId": team_id, "cycleId": cycle_id}
+
+    if project_id is not None:
+        variable_definitions.append("$projectId: String!")
+        query_fields.append(
+            "targetProject: project(id: $projectId) { id name archivedAt teamIds }"
+        )
+        variables["projectId"] = project_id
+    if state_id is not None:
+        variable_definitions.append("$stateId: String!")
+        query_fields.append(
+            "targetState: workflowState(id: $stateId) { "
+            "id name type archivedAt team { id name } }"
+        )
+        variables["stateId"] = state_id
+    if parent_issue_id is not None:
+        variable_definitions.append("$parentIssueId: String!")
+        query_fields.append(
+            "parentIssue: issue(id: $parentIssueId) { "
+            "id identifier title archivedAt team { id name } }"
+        )
+        variables["parentIssueId"] = parent_issue_id
+
+    for index, assignee_id in enumerate(assignee_ids):
+        variable_name = f"assigneeId{index}"
+        variable_definitions.append(f"${variable_name}: String!")
+        query_fields.append(
+            f"targetAssignee{index}: user(id: ${variable_name}) {{ id name }}"
+        )
+        variables[variable_name] = assignee_id
+    for index, label_id in enumerate(label_ids):
+        variable_name = f"labelId{index}"
+        variable_definitions.append(f"${variable_name}: String!")
+        query_fields.append(
+            f"targetLabel{index}: issueLabel(id: ${variable_name}) {{ "
+            "id name isGroup archivedAt team { id name } }"
+        )
+        variables[variable_name] = label_id
+
+    preflight_query = (
+        "query RailCallPlanSprintPreflight("
+        + ", ".join(variable_definitions)
+        + ") {\n"
+        + "\n".join(query_fields)
+        + "\n}"
+    )
+    preflight_status, preflight_data = _graphql(preflight_query, variables)
+
+    team = preflight_data.get("team")
+    if not isinstance(team, dict):
+        raise RuntimeError(f"Linear team {team_id!r} was not found.")
+    resolved_team_id = str(team.get("id") or "")
+    if not resolved_team_id:
+        raise RuntimeError("Linear did not return the selected team identifier.")
+
+    cycle = preflight_data.get("cycle")
+    if not isinstance(cycle, dict):
+        raise RuntimeError(f"Linear cycle {cycle_id!r} was not found.")
+    cycle_team = cycle.get("team")
+    cycle_team_id = (
+        str(cycle_team.get("id") or "")
+        if isinstance(cycle_team, dict)
+        else ""
+    )
+    if cycle_team_id != resolved_team_id:
+        raise RuntimeError("The selected cycle does not belong to the selected team.")
+    if cycle.get("completedAt"):
+        raise RuntimeError("The selected cycle is already completed.")
+    cycle_end = _parse_linear_datetime(cycle.get("endsAt"))
+    if cycle_end is not None and cycle_end < datetime.now(timezone.utc):
+        raise RuntimeError("The selected cycle has already ended.")
+
+    target_project = preflight_data.get("targetProject")
+    if project_id is not None:
+        if not isinstance(target_project, dict):
+            raise RuntimeError(f"Linear project {project_id!r} was not found.")
+        if target_project.get("archivedAt"):
+            raise RuntimeError("The selected project is archived.")
+        project_team_ids = target_project.get("teamIds")
+        if not isinstance(project_team_ids, list):
+            raise RuntimeError("Linear did not return the selected project's teams.")
+        if resolved_team_id not in {str(item) for item in project_team_ids}:
+            raise RuntimeError("The selected project is not linked to the selected team.")
+
+    target_state = preflight_data.get("targetState")
+    if state_id is not None:
+        if not isinstance(target_state, dict):
+            raise RuntimeError(f"Linear workflow state {state_id!r} was not found.")
+        if target_state.get("archivedAt"):
+            raise RuntimeError("The selected workflow state is archived.")
+        state_team = target_state.get("team")
+        state_team_id = (
+            str(state_team.get("id") or "")
+            if isinstance(state_team, dict)
+            else ""
+        )
+        if state_team_id != resolved_team_id:
+            raise RuntimeError(
+                "The selected workflow state does not belong to the selected team."
+            )
+
+    parent_issue = preflight_data.get("parentIssue")
+    if parent_issue_id is not None:
+        if not isinstance(parent_issue, dict):
+            raise RuntimeError(
+                f"Linear parent issue {parent_issue_id!r} was not found."
+            )
+        if parent_issue.get("archivedAt"):
+            raise RuntimeError("The selected parent issue is archived.")
+        parent_team = parent_issue.get("team")
+        parent_team_id = (
+            str(parent_team.get("id") or "")
+            if isinstance(parent_team, dict)
+            else ""
+        )
+        if parent_team_id != resolved_team_id:
+            raise RuntimeError(
+                "The selected parent issue does not belong to the selected team."
+            )
+
+    resolved_assignees = {}
+    for index, assignee_id in enumerate(assignee_ids):
+        assignee = preflight_data.get(f"targetAssignee{index}")
+        if not isinstance(assignee, dict):
+            raise RuntimeError(
+                f"Linear workspace member {assignee_id!r} was not found."
+            )
+        resolved_assignees[assignee_id] = assignee
+
+    resolved_labels = {}
+    for index, label_id in enumerate(label_ids):
+        label = preflight_data.get(f"targetLabel{index}")
+        if not isinstance(label, dict):
+            raise RuntimeError(f"Linear issue label {label_id!r} was not found.")
+        if label.get("archivedAt"):
+            raise RuntimeError(
+                f"Linear label {str(label.get('name') or label_id)!r} is archived."
+            )
+        if label.get("isGroup") is True:
+            raise RuntimeError(
+                f"Linear label {str(label.get('name') or label_id)!r} is a label group."
+            )
+        label_team = label.get("team")
+        label_team_id = (
+            str(label_team.get("id") or "")
+            if isinstance(label_team, dict)
+            else ""
+        )
+        if label_team_id and label_team_id != resolved_team_id:
+            raise RuntimeError(
+                f"Linear label {str(label.get('name') or label_id)!r} belongs to another team."
+            )
+        resolved_labels[label_id] = label
+
+    requested_by_id = {}
+    batch_inputs = []
+    for issue in issues:
+        generated_id = str(uuid.uuid4())
+        requested_by_id[generated_id] = issue
+        issue_input = {
+            "id": generated_id,
+            "teamId": resolved_team_id,
+            "cycleId": str(cycle.get("id") or cycle_id),
+            "title": issue["title"],
+        }
+        if issue["description"]:
+            issue_input["description"] = issue["description"]
+        if issue["priority"] is not None:
+            issue_input["priority"] = issue["priority"]
+        if issue["estimate"] is not None:
+            issue_input["estimate"] = issue["estimate"]
+        if issue["assignee_id"] is not None:
+            issue_input["assigneeId"] = issue["assignee_id"]
+        if issue["label_ids"]:
+            issue_input["labelIds"] = issue["label_ids"]
+        if project_id is not None:
+            issue_input["projectId"] = project_id
+        if state_id is not None:
+            issue_input["stateId"] = state_id
+        if parent_issue_id is not None:
+            issue_input["parentId"] = str(parent_issue.get("id") or parent_issue_id)
+        batch_inputs.append(issue_input)
+
+    write_status, write_data = _graphql(
+        """
+        mutation RailCallPlanSprint($input: IssueBatchCreateInput!) {
+          issueBatchCreate(input: $input) {
+            success
+            issues {
+              id
+              identifier
+              title
+              priority
+              estimate
+              createdAt
+              state { id name type }
+              assignee { id name }
+              project { id name }
+              cycle { id number name }
+              parent { id identifier title }
+              labels(first: 20) { nodes { id name } }
+              team { id name key }
+            }
+          }
+        }
+        """,
+        {"input": {"issues": batch_inputs}},
+        is_write=True,
+    )
+
+    payload = write_data.get("issueBatchCreate")
+    created = payload.get("issues") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(created, list)
+    ):
+        raise RuntimeError("Linear did not confirm the sprint issue batch.")
+    created = [item for item in created if isinstance(item, dict)]
+    if len(created) != len(issues):
+        raise RuntimeError(
+            "Linear confirmed the sprint batch but returned an unexpected issue "
+            "count. Inspect the selected cycle before attempting another plan."
+        )
+
+    created_results = []
+    mapping_verified = True
+    for position, created_issue in enumerate(created, start=1):
+        created_id = str(created_issue.get("id") or "")
+        requested = requested_by_id.get(created_id)
+        if requested is None:
+            mapping_verified = False
+            requested = issues[position - 1]
+        labels_connection = created_issue.get("labels")
+        label_nodes = (
+            labels_connection.get("nodes")
+            if isinstance(labels_connection, dict)
+            else []
+        )
+        if not isinstance(label_nodes, list):
+            label_nodes = []
+        created_results.append({
+            "request_index": requested["request_index"],
+            "issue_id": created_id,
+            "identifier": str(created_issue.get("identifier") or ""),
+            "title": str(created_issue.get("title") or ""),
+            "priority": (
+                int(created_issue.get("priority"))
+                if isinstance(created_issue.get("priority"), (int, float))
+                else 0
+            ),
+            "estimate": (
+                int(created_issue.get("estimate"))
+                if isinstance(created_issue.get("estimate"), (int, float))
+                else 0
+            ),
+            "state": _entity_summary(created_issue.get("state")),
+            "assignee": _entity_summary(created_issue.get("assignee")),
+            "project": _entity_summary(created_issue.get("project")),
+            "cycle": _entity_summary(created_issue.get("cycle")),
+            "parent": (
+                {
+                    "id": str(created_issue["parent"].get("id") or ""),
+                    "identifier": str(
+                        created_issue["parent"].get("identifier") or ""
+                    ),
+                    "title": str(created_issue["parent"].get("title") or ""),
+                }
+                if isinstance(created_issue.get("parent"), dict)
+                else None
+            ),
+            "labels": [
+                _entity_summary(label)
+                for label in label_nodes
+                if isinstance(label, dict)
+            ],
+        })
+    created_results.sort(key=lambda item: item["request_index"])
+
+    cycle_number = (
+        int(cycle.get("number"))
+        if isinstance(cycle.get("number"), (int, float))
+        else 0
+    )
+    cycle_name = str(cycle.get("name") or "").strip()
+    if not cycle_name:
+        cycle_name = f"Cycle {cycle_number}" if cycle_number else "Unnamed cycle"
+
+    blast_radius = {
+        "issues_created": len(issues),
+        "assignee_links": sum(
+            1 for issue in issues if issue["assignee_id"] is not None
+        ),
+        "label_links": sum(len(issue["label_ids"]) for issue in issues),
+        "priority_values": sum(
+            1 for issue in issues if issue["priority"] is not None
+        ),
+        "estimate_values": sum(
+            1 for issue in issues if issue["estimate"] is not None
+        ),
+        "cycle_links": len(issues),
+        "project_links": len(issues) if project_id is not None else 0,
+        "parent_links": len(issues) if parent_issue_id is not None else 0,
+    }
+
+    compact_created = [
+        str(item.get("identifier") or "")[:40]
+        for item in created_results
+    ]
+    compact_created_ids = [
+        str(item.get("issue_id") or "")
+        for item in created_results
+    ]
+    created_detail_fields = {}
+    for slot in range(1, 6):
+        if slot <= len(created_results):
+            item = created_results[slot - 1]
+            title = str(item.get("title") or "")
+            detail = {
+                "request_index": item.get("request_index"),
+                "issue_id": str(item.get("issue_id") or ""),
+                "identifier": str(item.get("identifier") or "")[:40],
+                "title_preview": title[:48],
+                "title_length": len(title),
+                "priority": item.get("priority"),
+                "estimate": item.get("estimate"),
+            }
+            detail_text = json.dumps(
+                detail,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if len(detail_text) > 280:
+                detail["title_preview"] = ""
+                detail_text = json.dumps(
+                    detail,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            created_detail_fields[f"created_issue_{slot}_json"] = detail_text
+        else:
+            created_detail_fields[f"created_issue_{slot}_json"] = "null"
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": write_status,
+        "preflight_http_status": preflight_status,
+        "operation": "plan_sprint",
+        "atomic_batch": True,
+        "write_request_count": 1,
+        "transaction_scope": "Linear issueBatchCreate",
+        "team_id": resolved_team_id,
+        "team_name": str(team.get("name") or ""),
+        "cycle_id": str(cycle.get("id") or ""),
+        "cycle_number": cycle_number,
+        "cycle_name": cycle_name,
+        "project_json": json.dumps(
+            _entity_summary(target_project),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "state_json": json.dumps(
+            _entity_summary(target_state),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "parent_issue_json": json.dumps(
+            (
+                {
+                    "id": str(parent_issue.get("id") or ""),
+                    "identifier": str(parent_issue.get("identifier") or ""),
+                    "title": str(parent_issue.get("title") or ""),
+                }
+                if isinstance(parent_issue, dict)
+                else None
+            ),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "requested_count": len(issues),
+        "created_count": len(created_results),
+        "client_id_mapping_verified": mapping_verified,
+        "blast_radius_json": json.dumps(
+            blast_radius,
+            separators=(",", ":"),
+        ),
+        "created_issues_json": json.dumps(
+            compact_created,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "created_issue_ids_json": json.dumps(
+            compact_created_ids,
+            separators=(",", ":"),
+        ),
+        **created_detail_fields,
+        "completed_steps_json": json.dumps(
+            ["preflight", "issue_batch_create"],
+            separators=(",", ":"),
+        ),
     }, None
 
 def _bounded_integer(value, name, *, default, minimum, maximum):
