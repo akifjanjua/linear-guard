@@ -55,6 +55,19 @@ FORBIDDEN_SUFFIXES = {
     ".pyc",
 }
 
+CANONICAL_TEXT_SUFFIXES = {
+    ".md",
+    ".py",
+    ".txt",
+    ".yml",
+    ".yaml",
+}
+
+SIGNED_SOURCE_PATHS = {
+    "handlers/handler.py",
+    "module.json",
+}
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -66,13 +79,24 @@ def fail(message: str) -> int:
 
 
 def canonical_release_bytes(relative: str, data: bytes) -> bytes:
-    """Normalize small text-only release files that Windows may rewrite."""
+    """Normalize unsigned text files without changing signed source bytes."""
     if relative == "module.sig":
         token = data.decode("ascii").strip()
         return (token + "\n").encode("ascii")
-    if relative == "requirements.txt":
+
+    suffix = Path(relative).suffix.lower()
+    should_normalize = (
+        relative == "requirements.txt"
+        or (
+            relative not in SIGNED_SOURCE_PATHS
+            and suffix in CANONICAL_TEXT_SUFFIXES
+        )
+    )
+
+    if should_normalize:
         text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         return text.encode("utf-8")
+
     return data
 
 
@@ -157,7 +181,7 @@ def main() -> int:
     for relative in sorted(file_bytes):
         print(f"- {relative}")
     print("- release-manifest.json (generated)")
-    print("Archive metadata, stored entries, and canonical small text files are deterministic.")
+    print("Archive metadata, stored entries, and unsigned text files are canonical and deterministic.")
     print("Credentials, local receipts, patches, caches, and temporary output were excluded.")
     return 0
 

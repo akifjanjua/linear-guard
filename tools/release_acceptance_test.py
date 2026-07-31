@@ -48,6 +48,19 @@ FORBIDDEN_BASENAMES = {
     "linear-guard-smoke-report.json",
 }
 
+CANONICAL_TEXT_SUFFIXES = {
+    ".md",
+    ".py",
+    ".txt",
+    ".yml",
+    ".yaml",
+}
+
+SIGNED_SOURCE_PATHS = {
+    "handlers/handler.py",
+    "module.json",
+}
+
 
 def fail(message: str) -> None:
     print(f"FAIL: {message}")
@@ -116,10 +129,18 @@ def main() -> int:
             if info.date_time != (1980, 1, 1, 0, 0, 0):
                 fail(f"non-deterministic ZIP timestamp for {info.filename}")
 
-        if b"\r" in archive.read("module.sig"):
-            fail("module.sig is not packaged with canonical LF line endings")
-        if b"\r" in archive.read("requirements.txt"):
-            fail("requirements.txt is not packaged with canonical LF line endings")
+        for name in names:
+            suffix = PurePosixPath(name).suffix.lower()
+            should_be_canonical = (
+                name == "module.sig"
+                or name == "requirements.txt"
+                or (
+                    name not in SIGNED_SOURCE_PATHS
+                    and suffix in CANONICAL_TEXT_SUFFIXES
+                )
+            )
+            if should_be_canonical and b"\r" in archive.read(name):
+                fail(f"text file is not packaged with canonical LF endings: {name}")
 
         expected_hashed_entries = name_set - {"release-manifest.json"}
         listed_hashes = release_manifest.get("files") or {}
@@ -148,22 +169,31 @@ def main() -> int:
         )
 
     first_build = archive_path.read_bytes()
-    subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "build_release.py")],
-        cwd=ROOT,
-        check=True,
-    )
-    second_build = archive_path.read_bytes()
+    workflow_path = ROOT / ".github" / "workflows" / "linear-guard-tests.yml"
+    workflow_original = workflow_path.read_bytes()
+    workflow_lf = workflow_original.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+    try:
+        workflow_path.write_bytes(workflow_lf.replace(b"\n", b"\r\n"))
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "build_release.py")],
+            cwd=ROOT,
+            check=True,
+        )
+        second_build = archive_path.read_bytes()
+    finally:
+        workflow_path.write_bytes(workflow_original)
+
     if first_build != second_build:
-        fail("release archive is not byte-for-byte reproducible")
+        fail("release archive changes when a Windows CRLF checkout is simulated")
 
     print("PASS: release archive opens and contains unique safe paths")
     print("PASS: all buyer, reviewer, test, and CI evidence files are included")
     print("PASS: packaged module is v1.5.0 with 16 commands and a valid signature token")
     print("PASS: generated release manifest matches every packaged file hash")
-    print("PASS: ZIP metadata and small text files are canonical and reproducible")
+    print("PASS: ZIP metadata and unsigned text files are canonical across LF/CRLF checkouts")
     print("PASS: extracted-package validation succeeds")
-    print("PASS: a second build is byte-for-byte identical")
+    print("PASS: a simulated Windows CRLF checkout rebuild is byte-for-byte identical")
     print("PASS: credentials, receipts, patches, caches, and local output are absent")
     print("RELEASE ACCEPTANCE TESTS PASSED")
     return 0

@@ -11,6 +11,7 @@
 - Kept nested created-issue receipt evidence URL-free so RailCall redaction cannot corrupt its JSON structure.
 - Added exact reference validation, no-op rejection, label-set limits, and honest partial-failure reporting.
 - Added deterministic release ZIP metadata, canonical line endings, extracted-package validation, and byte-for-byte reproducibility checks.
+- Canonicalized all unsigned packaged text so Linux and Windows checkouts produce the same release bytes.
 
 All notable Linear Guard changes are documented here.
 

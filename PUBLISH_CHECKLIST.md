@@ -68,7 +68,7 @@ python tools/build_release.py
 python tools/release_acceptance_test.py
 ```
 
-Confirm the archive is `dist/linear-guard-v1.5.0.zip`, every packaged hash matches the generated release manifest, the acceptance test rebuilds it byte-for-byte, extracted `tools/validate_release.py` passes, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
+Confirm the archive is `dist/linear-guard-v1.5.0.zip`, every packaged hash matches the generated release manifest, a simulated Windows CRLF checkout rebuilds it byte-for-byte, extracted `tools/validate_release.py` passes, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
 
 ## 7. Fresh buyer rehearsal
 
