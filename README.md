@@ -25,6 +25,8 @@ railcall market install muhammad-akif-janjua/linear-guard
 
 Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.0**, **signature verified**, and **16 commands**.
 
+The release archive is generated with a per-file SHA-256 manifest and is verified by the public CI workflow before publication.
+
 ## Configure credentials
 
 Create a Linear personal API key at `https://linear.app/settings/api`. In **RailCall Studio → Integrations → Linear**, save it as `LINEAR_API_KEY`. Credentials are resolved only through `vault_get("linear")`.

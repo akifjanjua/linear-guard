@@ -175,6 +175,25 @@ def main() -> int:
     if "response.get(\"errors\")" not in source:
         fail("GraphQL errors array does not appear to be checked")
 
+    if (ROOT / "release-manifest.json").exists():
+        fail("static release-manifest.json is stale-prone; it must be generated during the build")
+
+    release_builder = ROOT / "tools" / "build_release.py"
+    release_acceptance = ROOT / "tools" / "release_acceptance_test.py"
+    ci_workflow = ROOT / ".github" / "workflows" / "linear-guard-tests.yml"
+
+    for path in (release_builder, release_acceptance, ci_workflow):
+        if not path.is_file():
+            fail(f"missing release pipeline file: {path.relative_to(ROOT)}")
+
+    workflow_text = ci_workflow.read_text(encoding="utf-8")
+    for command in (
+        "python tools/build_release.py",
+        "python tools/release_acceptance_test.py",
+    ):
+        if command not in workflow_text:
+            fail(f"CI workflow does not run: {command}")
+
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     if len(readme.split()) > 500:
         fail("README exceeds the contest's 500-word limit")
@@ -199,6 +218,7 @@ def main() -> int:
     print("PASS: reviewer-blocked credential and subprocess paths are absent")
     print("PASS: vault-only auth, certifi TLS, and unknown-write handling are present")
     print("PASS: README is within 500 words and listing copy is clean")
+    print("PASS: release archive generation and acceptance checks are wired into CI")
     print(f"PASS: Linear Guard {manifest['version']} is ready for security tests and signing")
     return 0
 

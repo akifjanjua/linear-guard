@@ -31,7 +31,7 @@ python tools/v15_plan_sprint_test.py
 python tools/v15_rebalance_sprint_test.py
 ```
 
-Both scripts must end in PASS.
+Every validation and test command must end in PASS.
 
 ## 4. Test with the real Linear API
 
@@ -65,9 +65,10 @@ Any later edit to `module.json` or `handlers/handler.py` requires signing again.
 
 ```bash
 python tools/build_release.py
+python tools/release_acceptance_test.py
 ```
 
-Confirm the archive is `dist/linear-guard-v1.5.0.zip` and contains no credentials, receipts, approval codes, or local workspace files.
+Confirm the archive is `dist/linear-guard-v1.5.0.zip`, every packaged hash matches the generated release manifest, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
 
 ## 7. Fresh buyer rehearsal
 

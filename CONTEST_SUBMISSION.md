@@ -12,7 +12,7 @@ The six write commands cannot run silently. RailCall previews the exact payload,
 
 Linear Guard resolves credentials only through RailCall's vault helper, uses certifi-backed verified HTTPS, never invokes curl or another subprocess, actively redacts credentials from errors, and never automatically retries mutations with an uncertain outcome.
 
-I tested it against the real Linear GraphQL API with no mocks or stubs. The evidence includes one approved triage composite, an atomic two-issue sprint plan, bounded receipt evidence, and independently verified signed receipts.
+I tested it against the real Linear GraphQL API with no mocks or stubs. The evidence includes one approved triage composite, an atomic two-issue sprint plan, a one-request two-issue sprint rebalance, bounded receipt evidence, and independently verified signed receipts. The public CI workflow tests Python 3.10, 3.12, and 3.13 and verifies the final release archive file by file.
 
 Marketplace listing: [PASTE APPROVED LISTING URL]
 

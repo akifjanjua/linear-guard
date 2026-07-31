@@ -36,3 +36,7 @@ jobs:
         run: python tools/v15_plan_sprint_test.py
       - name: Run Phase 4 sprint-rebalance tests
         run: python tools/v15_rebalance_sprint_test.py
+      - name: Build clean release archive
+        run: python tools/build_release.py
+      - name: Verify release archive
+        run: python tools/release_acceptance_test.py

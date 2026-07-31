@@ -12,7 +12,9 @@ All Linear requests use Python `urllib.request` with certificate and hostname ve
 
 ## Governance
 
-`linear.create_issue`, `linear.update_issue`, and `linear.add_comment` are `write_requires_approval`. RailCall binds approval to the exact previewed payload. Without matching approval, the external write is blocked.
+All six writes—`linear.create_issue`, `linear.update_issue`, `linear.add_comment`, `linear.triage_issue`, `linear.plan_sprint`, and `linear.rebalance_sprint`—are `write_requires_approval`. RailCall binds approval to the exact previewed payload. Without matching approval, the external write is blocked.
+
+The three composites preflight every referenced Linear entity before mutation. Sprint planning and rebalancing are capped at five issues, use one server-side batch request, reject no-op or malformed plans, and return bounded per-issue receipt evidence.
 
 ## Retry and unknown-outcome policy
 

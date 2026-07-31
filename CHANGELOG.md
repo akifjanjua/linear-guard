@@ -1,3 +1,5 @@
+# Changelog
+
 ## Unreleased — v1.5.0 governed operations
 
 - Added `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
@@ -8,8 +10,6 @@
 - Added sprint-wide preflight validation, one-request blast-radius evidence, and deterministic created-issue mapping.
 - Kept nested created-issue receipt evidence URL-free so RailCall redaction cannot corrupt its JSON structure.
 - Added exact reference validation, no-op rejection, label-set limits, and honest partial-failure reporting.
-
-# Changelog
 
 All notable Linear Guard changes are documented here.
 
