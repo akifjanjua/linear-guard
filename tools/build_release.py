@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a clean, self-describing Linear Guard release archive."""
+"""Build a clean, deterministic, self-describing Linear Guard release archive."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
+FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 REQUIRED = [
     "module.json",
@@ -64,6 +65,29 @@ def fail(message: str) -> int:
     return 1
 
 
+def canonical_release_bytes(relative: str, data: bytes) -> bytes:
+    """Normalize small text-only release files that Windows may rewrite."""
+    if relative == "module.sig":
+        token = data.decode("ascii").strip()
+        return (token + "\n").encode("ascii")
+    if relative == "requirements.txt":
+        text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        return text.encode("utf-8")
+    return data
+
+
+def write_deterministic_entry(
+    archive: zipfile.ZipFile,
+    relative: str,
+    data: bytes,
+) -> None:
+    info = zipfile.ZipInfo(relative, date_time=FIXED_ZIP_TIMESTAMP)
+    info.compress_type = zipfile.ZIP_STORED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, data)
+
+
 def main() -> int:
     missing = [path for path in REQUIRED if not (ROOT / path).is_file()]
     if missing:
@@ -91,7 +115,7 @@ def main() -> int:
     included = sorted(dict.fromkeys(included))
 
     file_bytes = {
-        relative: (ROOT / relative).read_bytes()
+        relative: canonical_release_bytes(relative, (ROOT / relative).read_bytes())
         for relative in included
     }
 
@@ -102,22 +126,28 @@ def main() -> int:
         "command_count": len(manifest.get("commands") or []),
         "signature_included": True,
         "generated_by": "tools/build_release.py",
+        "reproducible_build": True,
         "files": {
             relative: sha256_bytes(data)
             for relative, data in sorted(file_bytes.items())
         },
     }
 
+    manifest_bytes = (
+        json.dumps(release_manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
     with zipfile.ZipFile(
         archive_path,
         "w",
-        compression=zipfile.ZIP_DEFLATED,
+        compression=zipfile.ZIP_STORED,
     ) as archive:
         for relative, data in sorted(file_bytes.items()):
-            archive.writestr(relative, data)
-        archive.writestr(
+            write_deterministic_entry(archive, relative, data)
+        write_deterministic_entry(
+            archive,
             "release-manifest.json",
-            json.dumps(release_manifest, indent=2, sort_keys=True) + "\n",
+            manifest_bytes,
         )
 
     print(f"Built: {archive_path}")
@@ -127,6 +157,7 @@ def main() -> int:
     for relative in sorted(file_bytes):
         print(f"- {relative}")
     print("- release-manifest.json (generated)")
+    print("Archive metadata, stored entries, and canonical small text files are deterministic.")
     print("Credentials, local receipts, patches, caches, and temporary output were excluded.")
     return 0
 

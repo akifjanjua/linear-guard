@@ -10,6 +10,7 @@
 - Added sprint-wide preflight validation, one-request blast-radius evidence, and deterministic created-issue mapping.
 - Kept nested created-issue receipt evidence URL-free so RailCall redaction cannot corrupt its JSON structure.
 - Added exact reference validation, no-op rejection, label-set limits, and honest partial-failure reporting.
+- Added deterministic release ZIP metadata, canonical line endings, extracted-package validation, and byte-for-byte reproducibility checks.
 
 All notable Linear Guard changes are documented here.
 

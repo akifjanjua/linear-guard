@@ -6,7 +6,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -107,6 +109,17 @@ def main() -> int:
             fail("release manifest command count mismatch")
         if release_manifest.get("signature_included") is not True:
             fail("release manifest does not confirm signature inclusion")
+        if release_manifest.get("reproducible_build") is not True:
+            fail("release manifest does not confirm reproducible build settings")
+
+        for info in archive.infolist():
+            if info.date_time != (1980, 1, 1, 0, 0, 0):
+                fail(f"non-deterministic ZIP timestamp for {info.filename}")
+
+        if b"\r" in archive.read("module.sig"):
+            fail("module.sig is not packaged with canonical LF line endings")
+        if b"\r" in archive.read("requirements.txt"):
+            fail("requirements.txt is not packaged with canonical LF line endings")
 
         expected_hashed_entries = name_set - {"release-manifest.json"}
         listed_hashes = release_manifest.get("files") or {}
@@ -124,10 +137,33 @@ def main() -> int:
             if actual_hash != expected_hash:
                 fail(f"release hash mismatch for {name}")
 
+    with tempfile.TemporaryDirectory(prefix="linear-guard-release-") as temp_dir:
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(temp_dir)
+        extracted_root = Path(temp_dir)
+        subprocess.run(
+            [sys.executable, str(extracted_root / "tools" / "validate_release.py")],
+            cwd=extracted_root,
+            check=True,
+        )
+
+    first_build = archive_path.read_bytes()
+    subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "build_release.py")],
+        cwd=ROOT,
+        check=True,
+    )
+    second_build = archive_path.read_bytes()
+    if first_build != second_build:
+        fail("release archive is not byte-for-byte reproducible")
+
     print("PASS: release archive opens and contains unique safe paths")
     print("PASS: all buyer, reviewer, test, and CI evidence files are included")
     print("PASS: packaged module is v1.5.0 with 16 commands and a valid signature token")
     print("PASS: generated release manifest matches every packaged file hash")
+    print("PASS: ZIP metadata and small text files are canonical and reproducible")
+    print("PASS: extracted-package validation succeeds")
+    print("PASS: a second build is byte-for-byte identical")
     print("PASS: credentials, receipts, patches, caches, and local output are absent")
     print("RELEASE ACCEPTANCE TESTS PASSED")
     return 0

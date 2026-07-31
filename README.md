@@ -25,7 +25,7 @@ railcall market install muhammad-akif-janjua/linear-guard
 
 Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.0**, **signature verified**, and **16 commands**.
 
-The release archive is generated with a per-file SHA-256 manifest and is verified by the public CI workflow before publication.
+The release archive is deterministic, includes a per-file SHA-256 manifest, validates after extraction, and is rebuilt byte-for-byte by the public CI workflow before publication.
 
 ## Configure credentials
 
