@@ -1,12 +1,20 @@
 # Linear Guard
 
-Linear Guard is a governance-first RailCall module for engineering, product, and operations teams that use Linear. It provides 10 focused commands for discovering workspace data, finding issues, and making approval-controlled changes through the real Linear GraphQL API.
+[![Linear Guard Tests](https://github.com/akifjanjua/linear-guard/actions/workflows/linear-guard-tests.yml/badge.svg)](https://github.com/akifjanjua/linear-guard/actions/workflows/linear-guard-tests.yml)
+
+Linear Guard is a governance-first RailCall module for engineering, product, and operations teams using Linear. It provides 16 focused commands for discovery, sprint reporting, and approval-controlled issue operations through the real Linear GraphQL API.
 
 ## Commands
 
-Reads: `linear.get_current_user`, `linear.list_teams`, `linear.list_projects`, `linear.list_labels`, `linear.list_workflow_states`, `linear.search_issues`, and `linear.get_issue`.
+Reads: `linear.get_current_user`, `linear.list_teams`, `linear.list_projects`, `linear.list_labels`, `linear.list_workflow_states`, `linear.search_issues`, `linear.get_issue`, `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
 
-Writes: `linear.create_issue`, `linear.update_issue`, and `linear.add_comment`. Every write is declared `write_requires_approval`, so RailCall previews the exact payload and blocks execution until a human approves it. Each result produces a signed receipt.
+Writes: `linear.create_issue`, `linear.update_issue`, `linear.triage_issue`, `linear.plan_sprint`, `linear.rebalance_sprint`, and `linear.add_comment`. Every write uses `write_requires_approval`, so RailCall binds human approval to the exact payload and produces a signed receipt.
+
+`linear.plan_sprint` is the flagship composite. One approval creates 2–5 fully configured issues through Linear's server-side `issueBatchCreate` transaction. It preflights the team, cycle, project, workflow state, parent issue, assignees, and labels before the single write request. Each issue can include its own title, description, priority, estimate, assignee, and up to five labels. The receipt records the bounded blast radius and every created issue.
+
+`linear.triage_issue` applies a complete bounded triage decision under one approval, including priority, state, assignee, project, cycle, labels, and an optional audit note.
+
+`linear.rebalance_sprint` applies one shared priority, estimate, state, assignee, project, cycle, or label-set decision to 2–5 same-team issues through one preflighted `issueBatchUpdate` request. This closes the loop from `linear.sprint_health` diagnosis to bounded corrective action.
 
 ## Install
 
@@ -15,44 +23,29 @@ python -m pip install certifi
 railcall market install muhammad-akif-janjua/linear-guard
 ```
 
-Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.4.0**, **signature verified**, and **10 commands**.
+Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.0**, **signature verified**, and **16 commands**.
+
+The release archive is deterministic, includes a per-file SHA-256 manifest, validates after extraction, and is rebuilt byte-for-byte by the public CI workflow before publication.
 
 ## Configure credentials
 
-Create a Linear personal API key at `https://linear.app/settings/api`. In **RailCall Studio → Integrations → Linear**, save it as `LINEAR_API_KEY` and select it as the default Linear credential. Linear Guard resolves credentials only through RailCall's `vault_get("linear")` helper. It never reads credential files or environment variables.
+Create a Linear personal API key at `https://linear.app/settings/api`. In **RailCall Studio → Integrations → Linear**, save it as `LINEAR_API_KEY`. Credentials are resolved only through `vault_get("linear")`.
 
-## Working read example
+## Governed sprint example
 
-Run `linear.get_current_user` with `{}`. Expected receipt output includes:
-
-```json
-{
-  "ok": true,
-  "http_status": 200,
-  "user_id": "...",
-  "name": "...",
-  "email": "..."
-}
-```
-
-## Governed write example
-
-Preview `linear.update_issue` with:
+Preview `linear.plan_sprint` with a team ID, cycle ID, and:
 
 ```json
-{"issue_id":"RAI-9","priority":2}
+[
+  {"title":"Implement approval UX","priority":2,"estimate":3,"assignee_id":"USER_UUID","label_ids":["LABEL_UUID"]},
+  {"title":"Document receipt verification","priority":3,"estimate":2}
+]
 ```
 
-Expected behaviour: RailCall creates a pending approval and does not touch Linear. After you approve the exact payload, the command executes once and produces a signed receipt. Linear Guard never automatically retries mutations. If the connection ends before a mutation is confirmed, it raises an “outcome is unknown” error and instructs you to check Linear before retrying.
+Pass that array as the `issues_json` string. Optional shared fields link every issue to a project, workflow state, or parent issue.
 
 ## Limitations
 
-Personal API keys act with the permissions of the Linear user who created them. Search examines up to 100 recent matching issues. Multi-record outputs are paginated to remain readable in receipts. The module requires the `certifi` Python package for verified HTTPS.
-
-## Troubleshooting
-
-- **Credentials not configured:** add `LINEAR_API_KEY` to the RailCall `linear` vault entry.
-- **`blocked_by_policy`:** review and approve the exact payload in **Studio → Sends**.
-- **Certificate dependency missing:** run `python -m pip install certifi` with the Python used by RailCall.
+Personal API keys act with their creator's permissions. Sprint plans and rebalances are limited to five issues; label sets are limited to five labels; all batch outputs use bounded receipt-safe evidence shards. Search and multi-record outputs remain bounded for receipt readability.
 
 `contest:2026Q3`

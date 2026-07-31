@@ -74,9 +74,8 @@ public_key = Ed25519PublicKey.from_public_bytes(
 
 public_key.verify(signature, signed_payload)
 
-SIGNATURE_PATH.write_text(
-    signature.hex() + "\n",
-    encoding="utf-8",
+SIGNATURE_PATH.write_bytes(
+    (signature.hex() + "\n").encode("ascii")
 )
 
 print("Module signed successfully.")

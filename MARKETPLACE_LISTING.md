@@ -1,15 +1,19 @@
 Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue work without unrestricted write access.
 
-It provides 10 focused commands: identify the current Linear user; list teams, projects, labels, and workflow states; search issues; retrieve a specific issue; create an issue; update an issue; and add a comment. The seven discovery and read commands are low risk. The three commands that change Linear use RailCall's preview → approve → execute flow, so no external write occurs until a human approves the exact payload.
+It provides 16 focused commands: 10 low-risk discovery and reporting commands plus 6 approval-controlled writes. The module can discover teams, projects, labels, workflow states, members, and cycles; search and retrieve issues; analyze sprint health; create and update issues; add comments; apply a complete triage decision; create a bounded sprint plan, and rebalance an existing sprint in one batch.
 
-Typical uses include issue discovery and triage, preparing a new issue for the correct team, changing title, priority, workflow state, project, or description, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.
+The flagship `linear.plan_sprint` command answers the question “why not install the bigger endpoint wrapper?” It is not another individual API action. One exact RailCall approval creates 2–5 fully configured Linear issues through the server-side `issueBatchCreate` transaction. The plan can bind every issue to a verified team and cycle, optionally link all issues to a project, workflow state, or parent issue, and apply per-issue assignees, labels, priorities, estimates, titles, and descriptions.
 
-Credentials are resolved exclusively through RailCall's `linear` vault provider. Linear Guard does not read RailCall credential files, does not use process environment variables, does not log the API key, and does not invoke curl or another subprocess. HTTPS requests use Python urllib with a certifi-backed verified SSL context.
+Every referenced Linear entity is validated before the single write request. The module rejects archived, cross-team, malformed, oversized, and duplicate plan data before touching Linear. The signed receipt records the requested and created issue counts, one-request transaction scope, blast-radius totals, and structured evidence for every created issue.
 
-Linear-specific failures are handled honestly. The module checks GraphQL `errors` even when Linear responds with HTTP 200, reports authentication and rate-limit failures clearly, and never converts exceptions into successful-looking error data. Mutations are never automatically retried. If a network failure occurs before Linear confirms a write, the module reports that the outcome is unknown and tells the user to check Linear before retrying.
+`linear.triage_issue` provides a second governed composite: one approval can set priority, workflow state, assignee, project, cycle, and a bounded replacement label set, then optionally add an audit note.
 
-Quick start: install the module, configure `LINEAR_API_KEY` in RailCall's Linear vault entry, then run `linear.get_current_user` or `linear.list_teams`. Preview create, update, and comment operations and approve them only after reviewing the exact payload.
+`linear.rebalance_sprint` provides the operational follow-through. After `linear.sprint_health` identifies attention items, one exact approval can apply one shared priority, estimate, workflow state, assignee, project, cycle, or replacement label set to 2–5 same-team issues through Linear `issueBatchUpdate`. It preflights every issue and reference, rejects all-no-op requests, uses one write request, and returns bounded per-issue evidence.
 
-Known limitations: personal API keys act with the permissions of the Linear user who created them; issue search examines up to 100 recent matches; multi-record outputs use receipt-safe pagination.
+Credentials are resolved exclusively through RailCall's `linear` vault provider. Linear Guard never reads credential files or process environment variables, invokes no subprocess, uses certifi-backed TLS, never automatically retries writes, and checks GraphQL `errors` even when Linear responds with HTTP 200.
+
+Quick start: install the module, configure `LINEAR_API_KEY` in RailCall's Linear vault entry, run the discovery commands to obtain IDs, and preview `linear.plan_sprint` or `linear.triage_issue` before approving the exact payload.
+
+Known limitations: personal API keys act with the permissions of their Linear user; sprint plans and rebalances are limited to five issues; label sets are limited to five labels; search and receipt outputs are bounded for readability.
 
 contest:2026Q3

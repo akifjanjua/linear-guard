@@ -228,6 +228,23 @@ def main() -> int:
             "issue_id": args.issue,
             "priority": 2,
         },
+        "linear.triage_issue": {
+            "issue_id": args.issue,
+            "priority": 2,
+            "triage_note": "Preview only. This triage command is not executed.",
+        },
+        "linear.plan_sprint": {
+            "team_id": teams[0].get("id"),
+            "cycle_id": "preview-only-cycle-id",
+            "issues_json": json.dumps([
+                {"title": "Preview sprint task one", "priority": 2},
+                {"title": "Preview sprint task two", "priority": 3},
+            ]),
+        },
+        "linear.rebalance_sprint": {
+            "issue_ids_json": json.dumps([args.issue, "RAI-10"]),
+            "priority": 3,
+        },
         "linear.add_comment": {
             "issue_id": args.issue,
             "body": "Linear Guard safe smoke-test preview. This is not executed.",
