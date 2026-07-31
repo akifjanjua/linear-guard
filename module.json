@@ -11,7 +11,7 @@
     "secret_field": "LINEAR_API_KEY",
     "docs": "https://linear.app/settings/api"
   },
-  "description": "Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue management without silent or unrestricted changes.\n\nIt provides 13 focused commands for the real Linear API: identify the current user; list teams, projects, labels, workflow states, workspace members, and team cycles; search and retrieve issues; analyze sprint health; create issues; update issues; and add comments.\n\nThe ten discovery, reporting, and read commands are low-risk. The three commands that change Linear use RailCall's preview → approve → execute flow. A create, update, or comment request is shown for review first, and Linear is not changed until a human approves the exact payload.\n\nTypical uses include finding and triaging issues, discovering the correct team or workflow state, preparing a new issue, changing an issue's title, description, priority, project, or status, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.\n\nLinear Guard uses the real Linear GraphQL API with no mocks or stubs. It checks Linear GraphQL errors even when the HTTP response is 200, reports authentication and rate-limit failures clearly, and does not present failed operations as successful results.\n\nQuick start: install Linear Guard from the marketplace, configure a Linear personal API key through RailCall Studio → Integrations → Linear, reload Modules, and run linear.get_current_user or linear.list_teams. Preview all create, update, and comment actions before approving them.\n\nKnown limitations: personal API keys operate with the permissions of the Linear user who created them. Search results are capped and paginated to remain readable in RailCall receipts.\n\nBuilt for the RailCall Track A module contest.\n\ncontest:2026Q3",
+  "description": "Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue management without silent or unrestricted changes.\n\nIt provides 14 focused commands for the real Linear API: identify the current user; list teams, projects, labels, workflow states, workspace members, and team cycles; search and retrieve issues; analyze sprint health; create issues; update issues; apply a complete governed triage decision; and add comments.\n\nThe ten discovery, reporting, and read commands are low-risk. The four commands that change Linear use RailCall's preview → approve → execute flow. A create, update, triage, or comment request is shown for review first, and Linear is not changed until a human approves the exact payload.\n\nTypical uses include finding and triaging issues, discovering the correct team or workflow state, preparing a new issue, changing an issue's title, description, priority, project, or status, and posting an auditable follow-up comment. Every completed command produces a signed RailCall receipt.\n\nLinear Guard uses the real Linear GraphQL API with no mocks or stubs. It checks Linear GraphQL errors even when the HTTP response is 200, reports authentication and rate-limit failures clearly, and does not present failed operations as successful results.\n\nQuick start: install Linear Guard from the marketplace, configure a Linear personal API key through RailCall Studio → Integrations → Linear, reload Modules, and run linear.get_current_user or linear.list_teams. Preview all create, update, and comment actions before approving them.\n\nKnown limitations: personal API keys operate with the permissions of the Linear user who created them. Search results are capped and paginated to remain readable in RailCall receipts.\n\nBuilt for the RailCall Track A module contest.\n\ncontest:2026Q3",
   "commands": [
     {
       "id": "linear.get_current_user",
@@ -372,6 +372,83 @@
         "state_counts_json": "string",
         "warnings_json": "string",
         "attention_issues_json": "string",
+        "http_status": "number"
+      }
+    },
+    {
+      "id": "linear.triage_issue",
+      "title": "Triage a Linear Issue",
+      "provider": "linear",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true
+        },
+        "priority": {
+          "type": "number",
+          "required": false
+        },
+        "state_id": {
+          "type": "string",
+          "required": false
+        },
+        "assignee_id": {
+          "type": "string",
+          "required": false
+        },
+        "clear_assignee": {
+          "type": "boolean",
+          "required": false
+        },
+        "project_id": {
+          "type": "string",
+          "required": false
+        },
+        "clear_project": {
+          "type": "boolean",
+          "required": false
+        },
+        "cycle_id": {
+          "type": "string",
+          "required": false
+        },
+        "clear_cycle": {
+          "type": "boolean",
+          "required": false
+        },
+        "label_ids_json": {
+          "type": "string",
+          "required": false
+        },
+        "triage_note": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "operation": "string",
+        "issue_id": "string",
+        "identifier": "string",
+        "title": "string",
+        "url": "string",
+        "updated_at": "string",
+        "priority": "number",
+        "state_json": "string",
+        "assignee_json": "string",
+        "project_json": "string",
+        "cycle_json": "string",
+        "labels_json": "string",
+        "changes_applied_json": "string",
+        "completed_steps_json": "string",
+        "triage_note_added": "boolean",
+        "comment_id": "string",
+        "preflight_http_status": "number",
+        "comment_http_status": "number",
         "http_status": "number"
       }
     }

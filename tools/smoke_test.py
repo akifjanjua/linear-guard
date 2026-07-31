@@ -228,6 +228,11 @@ def main() -> int:
             "issue_id": args.issue,
             "priority": 2,
         },
+        "linear.triage_issue": {
+            "issue_id": args.issue,
+            "priority": 2,
+            "triage_note": "Preview only. This triage command is not executed.",
+        },
         "linear.add_comment": {
             "issue_id": args.issue,
             "body": "Linear Guard safe smoke-test preview. This is not executed.",

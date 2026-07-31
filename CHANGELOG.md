@@ -1,3 +1,9 @@
+## Unreleased — v1.5.0 governed operations
+
+- Added `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
+- Added `linear.triage_issue`, a preflighted single-consent composite for bounded issue triage.
+- Added exact reference validation, no-op rejection, label-set limits, and honest partial-failure reporting.
+
 # Changelog
 
 All notable Linear Guard changes are documented here.
