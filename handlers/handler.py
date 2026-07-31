@@ -2387,6 +2387,508 @@ def linear_plan_sprint(inputs, stamp):
         ),
     }, None
 
+def _parse_rebalance_issue_ids_json(value):
+    """Parse 2–5 unique Linear issue identifiers for one batch update."""
+    if not isinstance(value, str):
+        raise RuntimeError("issue_ids_json must be a JSON array string.")
+    if len(value) > 2000:
+        raise RuntimeError("issue_ids_json must be 2000 characters or fewer.")
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "issue_ids_json must be valid JSON containing 2 to 5 issue IDs."
+        ) from exc
+    if not isinstance(parsed, list):
+        raise RuntimeError("issue_ids_json must decode to a JSON array.")
+    if len(parsed) < 2 or len(parsed) > 5:
+        raise RuntimeError("issue_ids_json must contain between 2 and 5 issues.")
+
+    result = []
+    seen = set()
+    for index, item in enumerate(parsed, start=1):
+        if not isinstance(item, str) or not item.strip():
+            raise RuntimeError(
+                f"issue_ids_json item {index} must be a non-empty issue UUID or identifier."
+            )
+        item = item.strip()
+        if len(item) > 200:
+            raise RuntimeError("Issue IDs must be 200 characters or fewer.")
+        key = item.casefold()
+        if key in seen:
+            raise RuntimeError("issue_ids_json must not contain duplicate issues.")
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def linear_rebalance_sprint(inputs, stamp):
+    """Apply one bounded shared update to 2–5 issues in one batch request."""
+    requested_issue_ids = _parse_rebalance_issue_ids_json(
+        inputs.get("issue_ids_json")
+    )
+
+    state_id = _optional_linear_id(
+        inputs,
+        "state_id",
+        "Linear workflow-state UUID",
+    )
+    assignee_id = _optional_linear_id(
+        inputs,
+        "assignee_id",
+        "Linear workspace-member UUID",
+    )
+    project_id = _optional_linear_id(
+        inputs,
+        "project_id",
+        "Linear project UUID",
+    )
+    cycle_id = _optional_linear_id(
+        inputs,
+        "cycle_id",
+        "Linear cycle UUID",
+    )
+
+    clear_assignee = _optional_boolean(inputs, "clear_assignee")
+    clear_project = _optional_boolean(inputs, "clear_project")
+    clear_cycle = _optional_boolean(inputs, "clear_cycle")
+
+    if assignee_id is not None and clear_assignee:
+        raise RuntimeError("Supply assignee_id or clear_assignee=true, not both.")
+    if project_id is not None and clear_project:
+        raise RuntimeError("Supply project_id or clear_project=true, not both.")
+    if cycle_id is not None and clear_cycle:
+        raise RuntimeError("Supply cycle_id or clear_cycle=true, not both.")
+
+    priority = None
+    if "priority" in inputs:
+        raw_priority = inputs.get("priority")
+        if isinstance(raw_priority, bool):
+            raise RuntimeError("priority must be an integer from 0 to 4.")
+        try:
+            priority = int(raw_priority)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("priority must be an integer from 0 to 4.") from exc
+        if priority < 0 or priority > 4:
+            raise RuntimeError("priority must be between 0 and 4.")
+
+    estimate = None
+    if "estimate" in inputs:
+        raw_estimate = inputs.get("estimate")
+        if isinstance(raw_estimate, bool):
+            raise RuntimeError("estimate must be an integer from 0 to 100.")
+        try:
+            estimate = int(raw_estimate)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("estimate must be an integer from 0 to 100.") from exc
+        if estimate < 0 or estimate > 100:
+            raise RuntimeError("estimate must be between 0 and 100.")
+
+    label_ids = None
+    if "label_ids_json" in inputs:
+        label_ids = _parse_label_ids_json(inputs.get("label_ids_json"))
+
+    requested_fields = []
+    if priority is not None:
+        requested_fields.append("priority")
+    if estimate is not None:
+        requested_fields.append("estimate")
+    if state_id is not None:
+        requested_fields.append("state")
+    if assignee_id is not None or clear_assignee:
+        requested_fields.append("assignee")
+    if project_id is not None or clear_project:
+        requested_fields.append("project")
+    if cycle_id is not None or clear_cycle:
+        requested_fields.append("cycle")
+    if label_ids is not None:
+        requested_fields.append("labels")
+    if not requested_fields:
+        raise RuntimeError(
+            "Supply at least one shared sprint change: priority, estimate, "
+            "state_id, assignee_id/clear_assignee, project_id/clear_project, "
+            "cycle_id/clear_cycle, or label_ids_json."
+        )
+
+    variable_definitions = []
+    query_fields = []
+    variables = {}
+    for index, issue_id in enumerate(requested_issue_ids):
+        variable_name = f"issueId{index}"
+        variable_definitions.append(f"${variable_name}: String!")
+        query_fields.append(
+            f"issue{index}: issue(id: ${variable_name}) {{ "
+            "id identifier title archivedAt priority estimate "
+            "state { id name type team { id name } } "
+            "assignee { id name } "
+            "project { id name archivedAt } "
+            "cycle { id number name completedAt team { id name } } "
+            "labels(first: 20) { nodes { id name isGroup archivedAt team { id name } } } "
+            "team { id name key } }"
+        )
+        variables[variable_name] = issue_id
+
+    if state_id is not None:
+        variable_definitions.append("$stateId: String!")
+        query_fields.append(
+            "targetState: workflowState(id: $stateId) { "
+            "id name type archivedAt team { id name } }"
+        )
+        variables["stateId"] = state_id
+    if assignee_id is not None:
+        variable_definitions.append("$assigneeId: String!")
+        query_fields.append(
+            "targetAssignee: user(id: $assigneeId) { id name }"
+        )
+        variables["assigneeId"] = assignee_id
+    if project_id is not None:
+        variable_definitions.append("$projectId: String!")
+        query_fields.append(
+            "targetProject: project(id: $projectId) { id name archivedAt teamIds }"
+        )
+        variables["projectId"] = project_id
+    if cycle_id is not None:
+        variable_definitions.append("$cycleId: String!")
+        query_fields.append(
+            "targetCycle: cycle(id: $cycleId) { "
+            "id number name completedAt team { id name } }"
+        )
+        variables["cycleId"] = cycle_id
+    for index, label_id in enumerate(label_ids or []):
+        variable_name = f"labelId{index}"
+        variable_definitions.append(f"${variable_name}: String!")
+        query_fields.append(
+            f"targetLabel{index}: issueLabel(id: ${variable_name}) {{ "
+            "id name isGroup archivedAt team { id name } }"
+        )
+        variables[variable_name] = label_id
+
+    preflight_status, preflight_data = _graphql(
+        "query RailCallRebalanceSprintPreflight("
+        + ", ".join(variable_definitions)
+        + ") {\n"
+        + "\n".join(query_fields)
+        + "\n}",
+        variables,
+    )
+
+    issues = []
+    team_id = ""
+    team_name = ""
+    for index, supplied_id in enumerate(requested_issue_ids):
+        issue = preflight_data.get(f"issue{index}")
+        if not isinstance(issue, dict):
+            raise RuntimeError(f"Linear issue {supplied_id!r} was not found.")
+        if issue.get("archivedAt"):
+            raise RuntimeError(
+                f"Linear issue {str(issue.get('identifier') or supplied_id)!r} is archived."
+            )
+        issue_team = issue.get("team")
+        issue_team_id = (
+            str(issue_team.get("id") or "")
+            if isinstance(issue_team, dict)
+            else ""
+        )
+        if not issue_team_id:
+            raise RuntimeError("Linear did not return the issue team during preflight.")
+        if not team_id:
+            team_id = issue_team_id
+            team_name = str(issue_team.get("name") or "")
+        elif issue_team_id != team_id:
+            raise RuntimeError(
+                "All issues in one sprint rebalance must belong to the same team."
+            )
+        issues.append(issue)
+
+    target_state = preflight_data.get("targetState")
+    if state_id is not None:
+        if not isinstance(target_state, dict):
+            raise RuntimeError(f"Linear workflow state {state_id!r} was not found.")
+        if target_state.get("archivedAt"):
+            raise RuntimeError("The selected workflow state is archived.")
+        target_team = target_state.get("team")
+        target_team_id = (
+            str(target_team.get("id") or "")
+            if isinstance(target_team, dict)
+            else ""
+        )
+        if target_team_id != team_id:
+            raise RuntimeError(
+                "The selected workflow state does not belong to the issues' team."
+            )
+
+    target_assignee = preflight_data.get("targetAssignee")
+    if assignee_id is not None and not isinstance(target_assignee, dict):
+        raise RuntimeError(f"Linear workspace member {assignee_id!r} was not found.")
+
+    target_project = preflight_data.get("targetProject")
+    if project_id is not None:
+        if not isinstance(target_project, dict):
+            raise RuntimeError(f"Linear project {project_id!r} was not found.")
+        if target_project.get("archivedAt"):
+            raise RuntimeError("The selected project is archived.")
+        project_team_ids = target_project.get("teamIds")
+        if not isinstance(project_team_ids, list) or team_id not in {
+            str(item) for item in project_team_ids
+        }:
+            raise RuntimeError(
+                "The selected project is not associated with the issues' team."
+            )
+
+    target_cycle = preflight_data.get("targetCycle")
+    if cycle_id is not None:
+        if not isinstance(target_cycle, dict):
+            raise RuntimeError(f"Linear cycle {cycle_id!r} was not found.")
+        target_team = target_cycle.get("team")
+        target_team_id = (
+            str(target_team.get("id") or "")
+            if isinstance(target_team, dict)
+            else ""
+        )
+        if target_team_id != team_id:
+            raise RuntimeError(
+                "The selected cycle does not belong to the issues' team."
+            )
+        if target_cycle.get("completedAt"):
+            raise RuntimeError("The selected cycle is already completed.")
+
+    target_labels = []
+    if label_ids is not None:
+        for index, label_id in enumerate(label_ids):
+            label = preflight_data.get(f"targetLabel{index}")
+            if not isinstance(label, dict):
+                raise RuntimeError(f"Linear issue label {label_id!r} was not found.")
+            if label.get("archivedAt"):
+                raise RuntimeError(
+                    f"The selected label {str(label.get('name') or label_id)!r} is archived."
+                )
+            if label.get("isGroup") is True:
+                raise RuntimeError(
+                    f"The selected label {str(label.get('name') or label_id)!r} is a label group."
+                )
+            label_team = label.get("team")
+            label_team_id = (
+                str(label_team.get("id") or "")
+                if isinstance(label_team, dict)
+                else ""
+            )
+            if label_team_id and label_team_id != team_id:
+                raise RuntimeError(
+                    f"The selected label {str(label.get('name') or label_id)!r} belongs to another team."
+                )
+            target_labels.append(label)
+
+    update_input = {}
+    if priority is not None:
+        update_input["priority"] = priority
+    if estimate is not None:
+        update_input["estimate"] = estimate
+    if state_id is not None:
+        update_input["stateId"] = state_id
+    if clear_assignee:
+        update_input["assigneeId"] = None
+    elif assignee_id is not None:
+        update_input["assigneeId"] = assignee_id
+    if clear_project:
+        update_input["projectId"] = None
+    elif project_id is not None:
+        update_input["projectId"] = project_id
+    if clear_cycle:
+        update_input["cycleId"] = None
+    elif cycle_id is not None:
+        update_input["cycleId"] = cycle_id
+    if label_ids is not None:
+        update_input["labelIds"] = label_ids
+
+    changed_issue_count = 0
+    for issue in issues:
+        differs = False
+        if priority is not None:
+            current = issue.get("priority")
+            current = int(current) if isinstance(current, (int, float)) else 0
+            differs = differs or current != priority
+        if estimate is not None:
+            current = issue.get("estimate")
+            current = int(current) if isinstance(current, (int, float)) else 0
+            differs = differs or current != estimate
+        if state_id is not None:
+            current = issue.get("state")
+            current_id = str(current.get("id") or "") if isinstance(current, dict) else ""
+            differs = differs or current_id != state_id
+        if assignee_id is not None or clear_assignee:
+            current = issue.get("assignee")
+            current_id = str(current.get("id") or "") if isinstance(current, dict) else ""
+            desired = assignee_id or ""
+            differs = differs or current_id != desired
+        if project_id is not None or clear_project:
+            current = issue.get("project")
+            current_id = str(current.get("id") or "") if isinstance(current, dict) else ""
+            desired = project_id or ""
+            differs = differs or current_id != desired
+        if cycle_id is not None or clear_cycle:
+            current = issue.get("cycle")
+            current_id = str(current.get("id") or "") if isinstance(current, dict) else ""
+            desired = cycle_id or ""
+            differs = differs or current_id != desired
+        if label_ids is not None:
+            connection = issue.get("labels")
+            nodes = connection.get("nodes") if isinstance(connection, dict) else []
+            if not isinstance(nodes, list):
+                nodes = []
+            current_ids = {
+                str(label.get("id") or "")
+                for label in nodes
+                if isinstance(label, dict) and str(label.get("id") or "")
+            }
+            differs = differs or current_ids != set(label_ids)
+        if differs:
+            changed_issue_count += 1
+
+    if changed_issue_count == 0:
+        raise RuntimeError(
+            "The requested shared properties already match every issue. "
+            "No Linear write was attempted."
+        )
+
+    resolved_ids = [str(issue.get("id") or "") for issue in issues]
+    if any(not value for value in resolved_ids):
+        raise RuntimeError("Linear did not return every issue UUID during preflight.")
+
+    write_status, write_data = _graphql(
+        """
+        mutation RailCallRebalanceSprint(
+          $ids: [UUID!]!
+          $input: IssueUpdateInput!
+        ) {
+          issueBatchUpdate(ids: $ids, input: $input) {
+            success
+            issues {
+              id
+              identifier
+              title
+              priority
+              estimate
+              updatedAt
+              state { id name type }
+              assignee { id name }
+              project { id name }
+              cycle { id number name }
+              labels(first: 20) { nodes { id name } }
+              team { id name key }
+            }
+          }
+        }
+        """,
+        {"ids": resolved_ids, "input": update_input},
+        is_write=True,
+    )
+
+    payload = write_data.get("issueBatchUpdate")
+    updated = payload.get("issues") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(updated, list)
+    ):
+        raise RuntimeError("Linear did not confirm the sprint rebalance batch.")
+    updated = [item for item in updated if isinstance(item, dict)]
+    if len(updated) != len(issues):
+        raise RuntimeError(
+            "Linear confirmed the batch update but returned an unexpected issue "
+            "count. Inspect the selected issues before retrying."
+        )
+    returned_ids = {str(issue.get("id") or "") for issue in updated}
+    if returned_ids != set(resolved_ids):
+        raise RuntimeError(
+            "Linear returned a different issue set after the batch update. "
+            "Inspect the selected issues before retrying."
+        )
+
+    updated.sort(key=lambda item: resolved_ids.index(str(item.get("id") or "")))
+    identifiers = [str(item.get("identifier") or "")[:40] for item in updated]
+    detail_fields = {}
+    for slot in range(1, 6):
+        if slot <= len(updated):
+            item = updated[slot - 1]
+            state = item.get("state")
+            assignee = item.get("assignee")
+            cycle = item.get("cycle")
+            title = str(item.get("title") or "")
+            detail = {
+                "request_index": slot,
+                "issue_id": str(item.get("id") or ""),
+                "identifier": str(item.get("identifier") or "")[:40],
+                "title_preview": title[:40],
+                "priority": (
+                    int(item.get("priority"))
+                    if isinstance(item.get("priority"), (int, float))
+                    else 0
+                ),
+                "estimate": (
+                    int(item.get("estimate"))
+                    if isinstance(item.get("estimate"), (int, float))
+                    else 0
+                ),
+                "state": str(state.get("name") or "")[:30] if isinstance(state, dict) else "",
+                "assignee": str(assignee.get("name") or "")[:30] if isinstance(assignee, dict) else "",
+                "cycle": str(cycle.get("number") or "") if isinstance(cycle, dict) else "",
+            }
+            detail_text = json.dumps(detail, ensure_ascii=False, separators=(",", ":"))
+            if len(detail_text) > 280:
+                detail["title_preview"] = ""
+                detail["state"] = ""
+                detail["assignee"] = ""
+                detail_text = json.dumps(detail, ensure_ascii=False, separators=(",", ":"))
+            detail_fields[f"updated_issue_{slot}_json"] = detail_text
+        else:
+            detail_fields[f"updated_issue_{slot}_json"] = "null"
+
+    blast_radius = {
+        "issues_targeted": len(issues),
+        "issues_with_detected_change": changed_issue_count,
+        "shared_fields": len(requested_fields),
+        "label_replacement_count": len(label_ids or []),
+        "write_requests": 1,
+    }
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": write_status,
+        "preflight_http_status": preflight_status,
+        "operation": "rebalance_sprint",
+        "batch_update": True,
+        "write_request_count": 1,
+        "batch_scope": "Linear issueBatchUpdate",
+        "team_id": team_id,
+        "team_name": team_name,
+        "requested_count": len(issues),
+        "updated_count": len(updated),
+        "changed_issue_count": changed_issue_count,
+        "changes_requested_json": json.dumps(
+            requested_fields,
+            separators=(",", ":"),
+        ),
+        "blast_radius_json": json.dumps(
+            blast_radius,
+            separators=(",", ":"),
+        ),
+        "updated_issues_json": json.dumps(
+            identifiers,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "updated_issue_ids_json": json.dumps(
+            resolved_ids,
+            separators=(",", ":"),
+        ),
+        **detail_fields,
+        "completed_steps_json": json.dumps(
+            ["preflight", "issue_batch_update"],
+            separators=(",", ":"),
+        ),
+    }, None
+
 def _bounded_integer(value, name, *, default, minimum, maximum):
     """Coerce one bounded integer without accepting booleans."""
     if value is None:

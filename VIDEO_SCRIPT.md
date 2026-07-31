@@ -8,25 +8,25 @@ Narration: “AI assistants should not receive silent, unrestricted write access
 
 ## 6–14 seconds
 
-Show RailCall Modules: v1.4.0, signature verified, 10 commands.
+Show RailCall Modules: v1.5.0, signature verified, 16 commands.
 
-Narration: “Linear Guard provides seven safe reads and three approval-gated writes, using vault-only credentials and signed receipts.”
+Narration: “Linear Guard provides ten safe reads and six approval-gated writes, including governed sprint-planning and sprint-rebalancing composites.”
 
 ## 14–25 seconds
 
-Run `linear.search_issues` and show a real issue result.
+Run `linear.sprint_health` and show the real Cycle 1 risk summary.
 
-Narration: “Read commands discover teams, projects, labels, workflow states, and issues through the real Linear API.”
+Narration: “Sprint health identifies unassigned, urgent, stale, unestimated, and unlabeled work through the real Linear API.”
 
 ## 25–40 seconds
 
-Preview `linear.update_issue`; zoom in on the exact issue and proposed change, then show pending approval.
+Preview `linear.plan_sprint` or `linear.rebalance_sprint`; zoom in on the bounded issue set and proposed shared decision, then show pending approval.
 
 Narration: “Every external change stops at RailCall's airlock. The exact payload is visible before anything reaches Linear.”
 
 ## 40–50 seconds
 
-Approve one harmless test update and show the change in Linear.
+Approve one bounded composite and show multiple resulting issues or updates in Linear.
 
 Narration: “Only a human-approved payload executes, and mutations are never silently retried.”
 

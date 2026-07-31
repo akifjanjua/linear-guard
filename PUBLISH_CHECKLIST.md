@@ -1,13 +1,13 @@
-# Linear Guard v1.4.0 Publish Checklist
+# Linear Guard v1.5.0 Publish Checklist
 
 ## 1. Work on a separate branch
 
 ```bash
 cd ~/Projects/linear-guard
-git switch -c release/v1.4.0-security-hardening
+git switch feature/v1.5.0-governed-operations
 ```
 
-Do not alter the published v1.3.0 tag.
+Do not alter the published v1.4.0 tag.
 
 ## 2. Install the transport dependency
 
@@ -25,6 +25,10 @@ python -m py_compile handlers/handler.py
 python -m json.tool module.json > /dev/null
 python tools/validate_release.py
 python tools/security_test.py
+python tools/v15_read_test.py
+python tools/v15_triage_test.py
+python tools/v15_plan_sprint_test.py
+python tools/v15_rebalance_sprint_test.py
 ```
 
 Both scripts must end in PASS.
@@ -37,9 +41,9 @@ Start RailCall Studio, install the module from the project path, reload Modules,
 python tools/smoke_test.py --issue RAI-9
 ```
 
-Expected: all seven reads pass; all three writes are previewed only; no write executes.
+Expected: all ten reads pass; all six writes are previewed only; no write executes.
 
-Then separately test one approved harmless update and confirm the matching signed receipt and real Linear result.
+Then separately test `linear.triage_issue`, `linear.plan_sprint`, and `linear.rebalance_sprint` against dedicated test issues, preserving the signed receipts and real Linear results.
 
 ## 5. Sign the exact release bytes
 
@@ -63,7 +67,7 @@ Any later edit to `module.json` or `handlers/handler.py` requires signing again.
 python tools/build_release.py
 ```
 
-Confirm the archive is `dist/linear-guard-v1.4.0.zip` and contains no credentials, receipts, approval codes, or local workspace files.
+Confirm the archive is `dist/linear-guard-v1.5.0.zip` and contains no credentials, receipts, approval codes, or local workspace files.
 
 ## 7. Fresh buyer rehearsal
 
@@ -83,7 +87,7 @@ Target: under five minutes with no manual editing of installed files.
 
 Paste only the buyer-facing copy from `MARKETPLACE_LISTING.md`. Confirm:
 
-- version `1.4.0`;
+- version `1.5.0`;
 - `contest:2026Q3` remains present;
 - no template headings are visible;
 - homepage and tests URLs are valid;
@@ -99,4 +103,4 @@ Do not repeatedly publish while debugging.
 
 ## 10. Reviewer reply
 
-State that all three blockers were fixed: vault-only credentials, no curl/subprocess, and a complete auth manifest. Also mention secret redaction, no mutation retries, unknown-write handling, README cleanup, fresh-install timing, and the demo video.
+State that all three blockers were fixed: vault-only credentials, no curl/subprocess, and a complete auth manifest. Also mention the 16-command surface, homepage/tests URL, CI workflow, governed composites, receipt-safe evidence sharding, no mutation retries, and the demo video.

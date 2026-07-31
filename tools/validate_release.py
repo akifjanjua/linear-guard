@@ -29,6 +29,7 @@ EXPECTED_COMMANDS = {
     "linear.sprint_health": "read",
     "linear.triage_issue": "write_requires_approval",
     "linear.plan_sprint": "write_requires_approval",
+    "linear.rebalance_sprint": "write_requires_approval",
 }
 
 FORBIDDEN_SOURCE_PATTERNS = {
@@ -77,6 +78,8 @@ def main() -> int:
         "auth",
         "description",
         "commands",
+        "homepage",
+        "tests_url",
     }
     missing = sorted(required_keys - set(manifest))
     if missing:
@@ -87,6 +90,11 @@ def main() -> int:
 
     if manifest["provider"] != "linear":
         fail("provider must be linear")
+
+    for link_name in ("homepage", "tests_url"):
+        link = manifest.get(link_name)
+        if not isinstance(link, str) or not link.startswith("https://"):
+            fail(f"{link_name} must be an HTTPS URL")
 
     expected_auth = {
         "type": "api_key",
@@ -184,7 +192,8 @@ def main() -> int:
 
     print("PASS: module.json is valid")
     print("PASS: handler.py parses")
-    print("PASS: 15 expected commands are present")
+    print("PASS: 16 expected commands are present")
+    print("PASS: homepage and tests_url are declared")
     print("PASS: all write commands require approval")
     print("PASS: previews and signed receipts are required")
     print("PASS: reviewer-blocked credential and subprocess paths are absent")

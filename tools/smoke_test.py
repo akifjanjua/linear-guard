@@ -241,6 +241,10 @@ def main() -> int:
                 {"title": "Preview sprint task two", "priority": 3},
             ]),
         },
+        "linear.rebalance_sprint": {
+            "issue_ids_json": json.dumps([args.issue, "RAI-10"]),
+            "priority": 3,
+        },
         "linear.add_comment": {
             "issue_id": args.issue,
             "body": "Linear Guard safe smoke-test preview. This is not executed.",
