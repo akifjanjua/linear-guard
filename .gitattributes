@@ -7,5 +7,7 @@
 *.txt text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+.gitattributes -text
+.moduleignore -text
 module.json -text
 module.sig -text
