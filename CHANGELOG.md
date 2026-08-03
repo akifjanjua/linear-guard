@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.5 — CR-Only Marketplace Handler Contract
+
+- Restored all 16 command implementations as real top-level functions in `handlers/handler.py`.
+- Satisfies the Marketplace static handler-function quality check without using an `exec(...)` wrapper.
+- Encoded `handlers/handler.py` with CR-only physical line separators: 3310 CR bytes and 0 LF bytes.
+- Preserved the newline-free `module.json` representation.
+- Confirmed that the CR-only handler parses successfully and exposes all 16 declared commands.
+- Preserved all governed Linear operations, vault-only credentials, zero model-provider destinations, approval-controlled writes, signed previews, and signed receipts.
+- Requires an exact-read publishing path so the submitted `handler_py` string retains its CR-only representation.
+
 ## 1.5.4 — Marketplace handler contract
 
 - Restored the complete 16-command implementation directly in `handlers/handler.py` to satisfy RailCall Marketplace quality checks.
