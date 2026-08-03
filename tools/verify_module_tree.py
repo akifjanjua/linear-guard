@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Verify a RailCall v2 module tree signature without trusting module.sig text alone."""
+"""Verify and enumerate the exact RailCall v2 module tree."""
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
+import os
+import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
-IGNORED_DIRS = {".git", "dist", "__pycache__", ".pytest_cache"}
-IGNORED_FILES = {"module.sig"}
+DEFAULT_IGNORED_DIRS = {".git"}
+DEFAULT_IGNORED_FILES = {".gitignore", "module.sig"}
 
 
 def fail(message: str) -> None:
@@ -30,20 +33,128 @@ def canonical_manifest(manifest: dict) -> bytes:
     ).encode("utf-8")
 
 
+def parse_moduleignore(data: bytes | str | None) -> list[str]:
+    if data is None:
+        return []
+    text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
+    patterns: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip().replace("\\", "/")
+        if not line or line.startswith("#"):
+            continue
+        while line.startswith("./"):
+            line = line[2:]
+        patterns.append(line)
+    return patterns
+
+
+def _pattern_matches(relative: str, is_dir: bool, pattern: str) -> bool:
+    rel = relative.strip("/")
+    pat = pattern.strip()
+    if not pat:
+        return False
+
+    directory_pattern = pat.endswith("/")
+    pat = pat.strip("/")
+    if not pat:
+        return False
+
+    if directory_pattern:
+        return rel == pat or rel.startswith(pat + "/")
+
+    if "/" in pat:
+        return fnmatch.fnmatchcase(rel, pat)
+
+    parts = PurePosixPath(rel).parts
+    return any(fnmatch.fnmatchcase(part, pat) for part in parts)
+
+
+def path_is_ignored(relative: str, is_dir: bool, patterns: list[str]) -> bool:
+    rel = relative.replace("\\", "/").strip("/")
+    parts = PurePosixPath(rel).parts
+    if any(part in DEFAULT_IGNORED_DIRS for part in parts):
+        return True
+    if not is_dir and rel in DEFAULT_IGNORED_FILES:
+        return True
+    return any(_pattern_matches(rel, is_dir, pattern) for pattern in patterns)
+
+
+def local_moduleignore_patterns(root: Path) -> list[str]:
+    path = root / ".moduleignore"
+    return parse_moduleignore(path.read_bytes() if path.is_file() else None)
+
+
+def committed_bytes(root: Path, relative: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", f"HEAD:{relative}"],
+        cwd=root,
+    )
+
+
+def committed_paths(root: Path) -> list[str]:
+    output = subprocess.check_output(
+        ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+        cwd=root,
+        text=True,
+    )
+    return sorted(line.strip() for line in output.splitlines() if line.strip())
+
+
+def committed_moduleignore_patterns(root: Path) -> list[str]:
+    try:
+        data = committed_bytes(root, ".moduleignore")
+    except subprocess.CalledProcessError:
+        return []
+    return parse_moduleignore(data)
+
+
+def committed_module_paths(root: Path, *, include_signature: bool) -> list[str]:
+    patterns = committed_moduleignore_patterns(root)
+    selected: list[str] = []
+    for relative in committed_paths(root):
+        if relative == "module.sig" and include_signature:
+            selected.append(relative)
+            continue
+        if path_is_ignored(relative, False, patterns):
+            continue
+        selected.append(relative)
+    return sorted(selected)
+
+
 def signed_tree(root: Path) -> list[tuple[str, str]]:
+    patterns = local_moduleignore_patterns(root)
     files: list[tuple[str, str]] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        relative_path = path.relative_to(root)
-        if any(part in IGNORED_DIRS for part in relative_path.parts):
-            continue
-        relative = relative_path.as_posix()
-        if relative in IGNORED_FILES:
-            continue
-        files.append((relative, hashlib.sha256(path.read_bytes()).hexdigest()))
+    root = root.resolve()
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
+        kept_dirs: list[str] = []
+        for dirname in dirnames:
+            relative = (current / dirname).relative_to(root).as_posix()
+            if not path_is_ignored(relative, True, patterns):
+                kept_dirs.append(dirname)
+        dirnames[:] = kept_dirs
+
+        for filename in filenames:
+            path = current / filename
+            relative = path.relative_to(root).as_posix()
+            if path_is_ignored(relative, False, patterns):
+                continue
+            files.append((relative, hashlib.sha256(path.read_bytes()).hexdigest()))
+
     files.sort(key=lambda item: item[0])
     return files
+
+
+def assert_local_tree_matches_head(root: Path) -> None:
+    local = {relative for relative, _digest in signed_tree(root)}
+    committed = set(committed_module_paths(root, include_signature=False))
+    if local != committed:
+        fail(
+            "local RailCall tree differs from committed module tree; "
+            f"local_only={sorted(local - committed)}, "
+            f"HEAD_only={sorted(committed - local)}"
+        )
 
 
 def main() -> int:

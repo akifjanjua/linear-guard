@@ -49,7 +49,7 @@ python tools/build_release.py
 python tools/release_acceptance_test.py
 ```
 
-The build reads exact blobs from Git `HEAD`; it does not normalize or rewrite signed files. The ZIP must contain exactly the tracked commit tree, including `module.sig`. The per-file release manifest is generated beside the ZIP, never inside it.
+The build reads exact blobs from Git `HEAD`; it does not normalize or rewrite signed files. The ZIP contains exactly RailCall's committed module tree plus `module.sig`, respecting `.moduleignore` and RailCall's built-in exclusions. The per-file release manifest is generated beside the ZIP, never inside it.
 
 Expected assets:
 

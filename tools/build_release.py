@@ -10,6 +10,11 @@ import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from verify_module_tree import (
+    assert_local_tree_matches_head,
+    committed_module_paths,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -40,12 +45,6 @@ def run_git(*args: str, binary: bool = False):
     return result.stdout
 
 
-def tracked_paths() -> list[str]:
-    output = run_git("ls-tree", "-r", "--name-only", "HEAD")
-    paths = [line.strip() for line in output.splitlines() if line.strip()]
-    return sorted(paths)
-
-
 def committed_bytes(relative: str) -> bytes:
     return run_git("show", f"HEAD:{relative}", binary=True)
 
@@ -74,7 +73,8 @@ def main() -> int:
         print(status.rstrip())
         return 1
 
-    paths = tracked_paths()
+    assert_local_tree_matches_head(ROOT)
+    paths = committed_module_paths(ROOT, include_signature=True)
     required = {"module.json", "module.sig", "handlers/handler.py"}
     missing = sorted(required - set(paths))
     if missing:
@@ -111,7 +111,7 @@ def main() -> int:
         "git_commit": head,
         "archive": archive_path.name,
         "archive_sha256": sha256_bytes(archive_path.read_bytes()),
-        "tracked_tree_exact": True,
+        "railcall_module_tree_exact": True,
         "files": {
             relative: sha256_bytes(blobs[relative])
             for relative in paths
@@ -128,7 +128,7 @@ def main() -> int:
     print(f"Git commit: {head}")
     print(f"Module version: {version}")
     print(f"Command count: {release_manifest['command_count']}")
-    print(f"Tracked files packaged: {len(paths)}")
+    print(f"Module files packaged: {len(paths)}")
     print(f"Archive SHA-256: {release_manifest['archive_sha256']}")
     print("PASS: archive bytes came directly from immutable Git HEAD blobs")
     return 0

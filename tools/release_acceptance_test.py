@@ -13,6 +13,8 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from verify_module_tree import committed_module_paths
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
@@ -39,11 +41,6 @@ def run_git(*args: str, binary: bool = False):
         text=not binary,
     )
     return result.stdout
-
-
-def tracked_paths() -> list[str]:
-    output = run_git("ls-tree", "-r", "--name-only", "HEAD")
-    return sorted(line.strip() for line in output.splitlines() if line.strip())
 
 
 def committed_bytes(relative: str) -> bytes:
@@ -81,7 +78,7 @@ def main() -> int:
     if not files_path.is_file():
         fail(f"missing external file manifest: {files_path}")
 
-    expected_paths = tracked_paths()
+    expected_paths = committed_module_paths(ROOT, include_signature=True)
     expected_set = set(expected_paths)
     release_manifest = json.loads(files_path.read_text(encoding="utf-8"))
 
@@ -163,7 +160,7 @@ def main() -> int:
     if first != second:
         fail("release archive is not byte-for-byte reproducible")
 
-    print("PASS: archive contains exactly the committed Git HEAD tree")
+    print("PASS: archive contains exactly the committed RailCall module tree")
     print("PASS: every packaged byte matches its committed Git blob")
     print("PASS: deterministic ZIP metadata and byte-for-byte rebuild verified")
     print("PASS: external per-file manifest and archive SHA-256 verified")

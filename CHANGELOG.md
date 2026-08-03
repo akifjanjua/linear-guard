@@ -8,6 +8,7 @@
 - Moved the per-file release manifest outside the signed module archive to avoid adding unsigned files after signing.
 - Removed the obsolete single-file signing helper; all signing now uses `railcall market module sign`.
 - Enforced commit-before-sign ordering and post-sign, post-package, and post-merge verification.
+- Added `.moduleignore` and aligned release packaging with RailCall's exact ignored-path rules, excluding local `dist/` and reference artifacts from the signed tree.
 
 ## 1.5.1 — Station v0.45 egress contract
 
