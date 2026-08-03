@@ -1,77 +1,32 @@
 #!/usr/bin/env python3
-"""Build a clean, deterministic, self-describing Linear Guard release archive."""
+"""Build a deterministic archive from the exact committed RailCall module tree."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+from verify_module_tree import (
+    assert_local_tree_matches_head,
+    committed_module_paths,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
-REQUIRED = [
-    "module.json",
-    "module.sig",
-    "handlers/handler.py",
-    "requirements.txt",
-    "README.md",
-    "CHANGELOG.md",
-    "SECURITY.md",
-]
-
-OPTIONAL = [
-    "MARKETPLACE_LISTING.md",
-    "CONTEST_SUBMISSION.md",
-    "EVIDENCE_CHECKLIST.md",
-    "PUBLISH_CHECKLIST.md",
-    "VIDEO_SCRIPT.md",
-    "docs/TROUBLESHOOTING.md",
-    "tools/validate_release.py",
-    "tools/security_test.py",
-    "tools/v045_egress_contract_test.py",
-    "tools/smoke_test.py",
-    "tools/v15_read_test.py",
-    "tools/v15_triage_test.py",
-    "tools/v15_plan_sprint_test.py",
-    "tools/v15_rebalance_sprint_test.py",
-    "tools/release_acceptance_test.py",
-    ".github/workflows/linear-guard-tests.yml",
-]
-
-FORBIDDEN_NAMES = {
+FORBIDDEN_BASENAMES = {
     ".env",
+    "approve_token.json",
     "credentials.local.json",
     "keys.local.json",
-    "approve_token.json",
     "linear-guard-smoke-report.json",
 }
-
-FORBIDDEN_SUFFIXES = {
-    ".key",
-    ".patch",
-    ".pyc",
-}
-
-CANONICAL_TEXT_SUFFIXES = {
-    ".md",
-    ".py",
-    ".txt",
-    ".yml",
-    ".yaml",
-}
-
-SIGNED_SOURCE_PATHS = {
-    "handlers/handler.py",
-    "module.json",
-}
-
-
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+FORBIDDEN_SUFFIXES = {".key", ".patch", ".pyc"}
 
 
 def fail(message: str) -> int:
@@ -79,33 +34,26 @@ def fail(message: str) -> int:
     return 1
 
 
-def canonical_release_bytes(relative: str, data: bytes) -> bytes:
-    """Normalize unsigned text files without changing signed source bytes."""
-    if relative == "module.sig":
-        token = data.decode("ascii").strip()
-        return (token + "\n").encode("ascii")
-
-    suffix = Path(relative).suffix.lower()
-    should_normalize = (
-        relative == "requirements.txt"
-        or (
-            relative not in SIGNED_SOURCE_PATHS
-            and suffix in CANONICAL_TEXT_SUFFIXES
-        )
+def run_git(*args: str, binary: bool = False):
+    result = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=not binary,
     )
-
-    if should_normalize:
-        text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
-        return text.encode("utf-8")
-
-    return data
+    return result.stdout
 
 
-def write_deterministic_entry(
-    archive: zipfile.ZipFile,
-    relative: str,
-    data: bytes,
-) -> None:
+def committed_bytes(relative: str) -> bytes:
+    return run_git("show", f"HEAD:{relative}", binary=True)
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def write_entry(archive: zipfile.ZipFile, relative: str, data: bytes) -> None:
     info = zipfile.ZipInfo(relative, date_time=FIXED_ZIP_TIMESTAMP)
     info.compress_type = zipfile.ZIP_STORED
     info.create_system = 3
@@ -114,78 +62,77 @@ def write_deterministic_entry(
 
 
 def main() -> int:
-    missing = [path for path in REQUIRED if not (ROOT / path).is_file()]
-    if missing:
-        print("FAIL: missing required release files:")
-        for path in missing:
-            print(f"- {path}")
+    try:
+        head = run_git("rev-parse", "HEAD").strip()
+        status = run_git("status", "--porcelain", "--untracked-files=all")
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return fail(f"Git inspection failed: {exc}")
+
+    if status.strip():
+        print("FAIL: the release must be built from a clean committed tree:")
+        print(status.rstrip())
         return 1
 
-    manifest = json.loads((ROOT / "module.json").read_text(encoding="utf-8"))
-    version = str(manifest["version"])
+    assert_local_tree_matches_head(ROOT)
+    paths = committed_module_paths(ROOT, include_signature=True)
+    required = {"module.json", "module.sig", "handlers/handler.py"}
+    missing = sorted(required - set(paths))
+    if missing:
+        return fail(f"committed tree is missing required files: {missing}")
 
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-        relative_parts = path.relative_to(ROOT).parts
-        if "dist" in relative_parts or "__pycache__" in relative_parts or ".git" in relative_parts:
-            continue
-        if path.name in FORBIDDEN_NAMES or path.suffix.lower() in FORBIDDEN_SUFFIXES:
-            return fail(f"forbidden local or credential file exists: {path.relative_to(ROOT)}")
+    for relative in paths:
+        path = PurePosixPath(relative)
+        if path.is_absolute() or ".." in path.parts:
+            return fail(f"unsafe tracked path: {relative}")
+        if path.name in FORBIDDEN_BASENAMES:
+            return fail(f"forbidden tracked file: {relative}")
+        if path.suffix.lower() in FORBIDDEN_SUFFIXES:
+            return fail(f"forbidden tracked file type: {relative}")
+        if any(part in {".git", "dist", "__pycache__", ".pytest_cache", "receipts"} for part in path.parts):
+            return fail(f"forbidden tracked directory: {relative}")
+
+    blobs = {relative: committed_bytes(relative) for relative in paths}
+    manifest = json.loads(blobs["module.json"].decode("utf-8"))
+    version = str(manifest["version"])
 
     DIST.mkdir(exist_ok=True)
     archive_path = DIST / f"linear-guard-v{version}.zip"
+    files_path = DIST / f"linear-guard-v{version}.files.json"
 
-    included = REQUIRED + [path for path in OPTIONAL if (ROOT / path).is_file()]
-    included = sorted(dict.fromkeys(included))
-
-    file_bytes = {
-        relative: canonical_release_bytes(relative, (ROOT / relative).read_bytes())
-        for relative in included
-    }
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for relative in paths:
+            write_entry(archive, relative, blobs[relative])
 
     release_manifest = {
-        "name": "Linear Guard release archive",
+        "schema": "linear-guard-release-files.v1",
         "module_id": manifest.get("id"),
         "module_version": version,
         "command_count": len(manifest.get("commands") or []),
-        "signature_included": True,
-        "generated_by": "tools/build_release.py",
-        "reproducible_build": True,
+        "git_commit": head,
+        "archive": archive_path.name,
+        "archive_sha256": sha256_bytes(archive_path.read_bytes()),
+        "railcall_module_tree_exact": True,
         "files": {
-            relative: sha256_bytes(data)
-            for relative, data in sorted(file_bytes.items())
+            relative: sha256_bytes(blobs[relative])
+            for relative in paths
         },
     }
-
-    manifest_bytes = (
-        json.dumps(release_manifest, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
-
-    with zipfile.ZipFile(
-        archive_path,
-        "w",
-        compression=zipfile.ZIP_STORED,
-    ) as archive:
-        for relative, data in sorted(file_bytes.items()):
-            write_deterministic_entry(archive, relative, data)
-        write_deterministic_entry(
-            archive,
-            "release-manifest.json",
-            manifest_bytes,
-        )
+    files_path.write_text(
+        json.dumps(release_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
     print(f"Built: {archive_path}")
+    print(f"File manifest: {files_path}")
+    print(f"Git commit: {head}")
     print(f"Module version: {version}")
     print(f"Command count: {release_manifest['command_count']}")
-    print("Included files:")
-    for relative in sorted(file_bytes):
-        print(f"- {relative}")
-    print("- release-manifest.json (generated)")
-    print("Archive metadata, stored entries, and unsigned text files are canonical and deterministic.")
-    print("Credentials, local receipts, patches, caches, and temporary output were excluded.")
+    print(f"Module files packaged: {len(paths)}")
+    print(f"Archive SHA-256: {release_manifest['archive_sha256']}")
+    print("PASS: archive bytes came directly from immutable Git HEAD blobs")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

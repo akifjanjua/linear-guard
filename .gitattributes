@@ -3,6 +3,11 @@
 *.sig text eol=lf
 *.md text eol=lf
 .gitignore text eol=lf
+.moduleignore text eol=lf
 *.txt text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+.gitattributes -text
+.moduleignore -text
+module.json -text
+module.sig -text

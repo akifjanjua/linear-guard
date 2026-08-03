@@ -1,7 +1,7 @@
 {
   "id": "muhammad-akif-janjua/linear-guard",
   "name": "Linear Guard",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "publisher_pubkey": "e469d55383447fc6b95cbffb786fee7cc5c998c9dbe3143e7eec8ad210524540",
   "provider": "linear",
   "auth": {

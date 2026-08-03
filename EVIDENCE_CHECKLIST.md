@@ -3,7 +3,7 @@
 ## Strongest evidence set
 
 1. **Real Linear result** — show a harmless approved update or comment on the test issue.
-2. **Module loaded** — Linear Guard `v1.5.1`, signature verified, 16 commands, 1 loaded, 0 rejected.
+2. **Module loaded** — Linear Guard `v1.5.2`, signature verified, 16 commands, 1 loaded, 0 rejected.
 3. **Blocked before approval** — `blocked_by_policy` and `external_api_touched: false`.
 4. **Approved execution** — Sends card showing executed, HTTP 200, and signature present.
 5. **Independent receipt verification** — successful verification for the executed write.
