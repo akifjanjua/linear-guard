@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "module.json"
 HANDLER = ROOT / "handlers" / "handler.py"
+IMPLEMENTATION = ROOT / "handlers" / "linear_guard_impl.py"
 
 MODEL_IMPORT_ROOTS = {
     "anthropic",
@@ -38,7 +39,11 @@ def fail(message: str) -> None:
 
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    source = HANDLER.read_text(encoding="utf-8")
+    source = (
+    HANDLER.read_text(encoding="utf-8")
+    + "\n"
+    + IMPLEMENTATION.read_text(encoding="utf-8")
+)
     tree = ast.parse(source)
 
     if "allowed_destinations" not in manifest:

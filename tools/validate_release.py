@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 """Static release validation for Linear Guard."""
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "module.json"
 HANDLER_PATH = ROOT / "handlers" / "handler.py"
+IMPLEMENTATION_PATH = ROOT / "handlers" / "linear_guard_impl.py"
 
 EXPECTED_COMMANDS = {
     "linear.get_current_user": "read",
@@ -63,7 +64,11 @@ def main() -> int:
         fail("missing handlers/handler.py")
 
     manifest = load_manifest()
-    source = HANDLER_PATH.read_text(encoding="utf-8")
+    source = (
+    HANDLER_PATH.read_text(encoding="utf-8")
+    + "\n"
+    + IMPLEMENTATION_PATH.read_text(encoding="utf-8")
+)
 
     try:
         tree = ast.parse(source)
