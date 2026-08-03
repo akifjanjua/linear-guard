@@ -1,107 +1,84 @@
-# Linear Guard v1.5.1 Publish Checklist
+# Linear Guard v1.5.2 Publish Checklist
 
-## 1. Work on a separate branch
+## 1. Prepare and commit every signed source change
 
-```bash
-cd ~/Projects/linear-guard
-git switch feature/v1.5.1-v045-egress-contract
-```
+Work on a release branch. Run the complete static, security, Station v0.45, read, triage, sprint-planning, and sprint-rebalancing test suites.
 
-Do not alter the published v1.4.0 tag.
-
-## 2. Install the transport dependency
-
-Use the same Python RailCall uses:
+Before signing, commit every change except `module.sig`:
 
 ```bash
-python -m pip install certifi
-python -c "import certifi; print(certifi.where())"
+git add -A
+git restore --staged module.sig
+git diff --cached --check
+git commit -m "Prepare Linear Guard v1.5.2 signed-tree release"
 ```
 
-## 3. Run offline validation
+The working tree must then be clean before the official signing command.
+
+## 2. Sign only with RailCall
 
 ```bash
-python -m py_compile handlers/handler.py
-python -m json.tool module.json > /dev/null
-python tools/validate_release.py
-python tools/security_test.py
-python tools/v15_read_test.py
-python tools/v15_triage_test.py
-python tools/v15_plan_sprint_test.py
-python tools/v15_rebalance_sprint_test.py
+railcall market module sign .
+railcall market module verify .
 ```
 
-Every validation and test command must end in PASS.
+The signer may change only `module.sig`. If `module.json` also changes, commit that manifest change, sign again, and verify again.
 
-## 4. Test with the real Linear API
-
-Start RailCall Studio, install the module from the project path, reload Modules, and run:
+Commit the generated signature:
 
 ```bash
-python tools/smoke_test.py --issue RAI-9
+git add module.sig
+git commit -m "Sign Linear Guard v1.5.2 module tree"
 ```
 
-Expected: all ten reads pass; all six writes are previewed only; no write executes.
+Because RailCall excludes `module.sig` from the signed v2 tree, committing the signature does not change the signed payload.
 
-Then separately test `linear.triage_issue`, `linear.plan_sprint`, and `linear.rebalance_sprint` against dedicated test issues, preserving the signed receipts and real Linear results.
-
-## 5. Sign the exact release bytes
+## 3. Verify the committed tree
 
 ```bash
-python tools/sign_module.py
+python tools/verify_module_tree.py .
+railcall market module verify .
 ```
 
-Expected:
+Both verifiers must report a valid v2 tree signature with 16 commands.
 
-```text
-Module signed successfully.
-Signature verified locally.
-Signature bytes: 64
-```
-
-Any later edit to `module.json` or `handlers/handler.py` requires signing again.
-
-## 6. Build the archive
+## 4. Build and accept the release
 
 ```bash
 python tools/build_release.py
 python tools/release_acceptance_test.py
 ```
 
-Confirm the archive is `dist/linear-guard-v1.5.1.zip`, every packaged hash matches the generated release manifest, a simulated Windows CRLF checkout rebuilds it byte-for-byte, extracted `tools/validate_release.py` passes, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
+The build reads exact blobs from Git `HEAD`; it does not normalize or rewrite signed files. The ZIP must contain exactly the tracked commit tree, including `module.sig`. The per-file release manifest is generated beside the ZIP, never inside it.
 
-## 7. Fresh buyer rehearsal
+Expected assets:
 
-From outside the source directory:
-
-1. install the published marketplace version;
-2. configure `LINEAR_API_KEY` through the Linear vault entry;
-3. run `linear.get_current_user`;
-4. search an issue;
-5. preview an update;
-6. approve one harmless update;
-7. verify the signed receipt.
-
-Target: under five minutes with no manual editing of installed files.
-
-## 8. Listing metadata
-
-Paste only the buyer-facing copy from `MARKETPLACE_LISTING.md`. Confirm:
-
-- version `1.5.0`;
-- `contest:2026Q3` remains present;
-- no template headings are visible;
-- homepage and tests URLs are valid;
-- `video_url` is an unlisted YouTube walkthrough when ready.
-
-## 9. Publish once
-
-```bash
-railcall market publish .
+```text
+dist/linear-guard-v1.5.2.zip
+dist/linear-guard-v1.5.2.files.json
 ```
 
-Do not repeatedly publish while debugging.
+## 5. Push, review, and merge
 
-## 10. Reviewer reply
+Push the signed branch and wait for Python 3.10, 3.12, and 3.13 CI. Merge only after every check passes.
 
-State that all three blockers were fixed: vault-only credentials, no curl/subprocess, and a complete auth manifest. Also mention the 16-command surface, homepage/tests URL, CI workflow, governed composites, receipt-safe evidence sharding, no mutation retries, and the demo video.
+After merging, update local `main` and repeat:
+
+```bash
+python tools/verify_module_tree.py .
+railcall market module verify .
+python tools/build_release.py
+python tools/release_acceptance_test.py
+```
+
+Do not tag or publish if any verifier fails.
+
+## 6. Publish once
+
+Publish the existing marketplace ID only from the verified clean `main` directory:
+
+```bash
+railcall market publish . --type=module
+```
+
+Do not repeatedly publish while debugging. Preserve the marketplace output and the final signed receipt evidence.

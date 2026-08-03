@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.2 — Signed-tree release integrity
+
+- Corrected the release workflow so archives contain the exact Git-committed tree covered by RailCall's v2 module signature.
+- Added independent Ed25519 tree-signature verification and optional official RailCall verification after archive extraction.
+- Changed the build to read immutable bytes from `HEAD`, eliminating checkout line-ending drift.
+- Moved the per-file release manifest outside the signed module archive to avoid adding unsigned files after signing.
+- Removed the obsolete single-file signing helper; all signing now uses `railcall market module sign`.
+- Enforced commit-before-sign ordering and post-sign, post-package, and post-merge verification.
+
 ## 1.5.1 — Station v0.45 egress contract
 
 - Added a signed `allowed_destinations: []` manifest declaration: Linear Guard permits zero LLM/model-provider destinations.

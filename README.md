@@ -27,9 +27,9 @@ python -m pip install certifi
 railcall market install muhammad-akif-janjua/linear-guard
 ```
 
-Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.1**, **signature verified**, and **16 commands**.
+Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.2**, **signature verified**, and **16 commands**.
 
-The release archive is deterministic, includes a per-file SHA-256 manifest, validates after extraction, and is rebuilt byte-for-byte by the public CI workflow before publication.
+The release archive is built from immutable Git `HEAD` bytes, reproduces byte-for-byte across checkouts, includes an external per-file SHA-256 manifest, and must pass independent plus official RailCall signature verification after extraction.
 
 ## Configure credentials
 

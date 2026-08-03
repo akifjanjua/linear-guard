@@ -193,53 +193,29 @@ def main() -> int:
     if "response.get(\"errors\")" not in source:
         fail("GraphQL errors array does not appear to be checked")
 
-    release_manifest_path = ROOT / "release-manifest.json"
     release_builder = ROOT / "tools" / "build_release.py"
     release_acceptance = ROOT / "tools" / "release_acceptance_test.py"
+    signature_verifier = ROOT / "tools" / "verify_module_tree.py"
     ci_workflow = ROOT / ".github" / "workflows" / "linear-guard-tests.yml"
-    packaged_release = release_manifest_path.is_file() and not release_builder.is_file()
 
-    if release_manifest_path.exists() and not packaged_release:
-        fail("static release-manifest.json is stale-prone; it must be generated during the build")
-
-    required_pipeline_files = (release_acceptance, ci_workflow)
-    if not packaged_release:
-        required_pipeline_files = (release_builder, *required_pipeline_files)
-
-    for path in required_pipeline_files:
+    for path in (
+        release_builder,
+        release_acceptance,
+        signature_verifier,
+        ci_workflow,
+    ):
         if not path.is_file():
             fail(f"missing release pipeline file: {path.relative_to(ROOT)}")
 
     workflow_text = ci_workflow.read_text(encoding="utf-8")
     for command in (
         "python tools/v045_egress_contract_test.py",
+        "python tools/verify_module_tree.py .",
         "python tools/build_release.py",
         "python tools/release_acceptance_test.py",
     ):
         if command not in workflow_text:
             fail(f"CI workflow does not run: {command}")
-
-    if packaged_release:
-        release_manifest = json.loads(
-            release_manifest_path.read_text(encoding="utf-8")
-        )
-        if release_manifest.get("module_id") != manifest["id"]:
-            fail("generated release manifest module id mismatch")
-        if release_manifest.get("module_version") != manifest["version"]:
-            fail("generated release manifest version mismatch")
-        if release_manifest.get("command_count") != len(commands):
-            fail("generated release manifest command count mismatch")
-        if release_manifest.get("reproducible_build") is not True:
-            fail("generated release manifest does not declare a reproducible build")
-
-        listed_hashes = release_manifest.get("files") or {}
-        for relative, expected_hash in listed_hashes.items():
-            packaged_path = ROOT / relative
-            if not packaged_path.is_file():
-                fail(f"generated release manifest references missing file: {relative}")
-            actual_hash = hashlib.sha256(packaged_path.read_bytes()).hexdigest()
-            if actual_hash != expected_hash:
-                fail(f"generated release manifest hash mismatch: {relative}")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     if len(readme.split()) > 500:
@@ -266,9 +242,7 @@ def main() -> int:
     print("PASS: reviewer-blocked credential and subprocess paths are absent")
     print("PASS: vault-only auth, certifi TLS, and unknown-write handling are present")
     print("PASS: README is within 500 words and listing copy is clean")
-    print("PASS: release archive generation and acceptance checks are wired into CI")
-    if packaged_release:
-        print("PASS: generated release manifest verifies in the extracted package")
+    print("PASS: signed-tree verification, archive generation, and acceptance checks are wired into CI")
     print(f"PASS: Linear Guard {manifest['version']} is ready for security tests and signing")
     return 0
 
