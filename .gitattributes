@@ -9,5 +9,6 @@
 *.yaml text eol=lf
 .gitattributes -text
 .moduleignore -text
-module.json -text
+module.json -text -eol
 module.sig -text
+handlers/handler.py -text -eol
