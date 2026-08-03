@@ -1,5 +1,7 @@
 Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue work without unrestricted write access.
 
+Its signed Station v0.45 manifest declares zero LLM/model-provider destinations (`allowed_destinations: []`): Linear issue data is not sent to a model by the module.
+
 It provides 16 focused commands: 10 low-risk discovery and reporting commands plus 6 approval-controlled writes. The module can discover teams, projects, labels, workflow states, members, and cycles; search and retrieve issues; analyze sprint health; create and update issues; add comments; apply a complete triage decision; create a bounded sprint plan, and rebalance an existing sprint in one batch.
 
 The flagship `linear.plan_sprint` command answers the question “why not install the bigger endpoint wrapper?” It is not another individual API action. One exact RailCall approval creates 2–5 fully configured Linear issues through the server-side `issueBatchCreate` transaction. The plan can bind every issue to a verified team and cycle, optionally link all issues to a project, workflow state, or parent issue, and apply per-issue assignees, labels, priorities, estimates, titles, and descriptions.

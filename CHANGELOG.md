@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1 — Station v0.45 egress contract
+
+- Added a signed `allowed_destinations: []` manifest declaration: Linear Guard permits zero LLM/model-provider destinations.
+- Added a dedicated v0.45 contract test that rejects accidental model-provider SDKs, provider hosts, or `station_llm` usage.
+- Clarified that `api.linear.app` is the module's declared business integration endpoint, not model-provider egress.
+- Wired the new contract test into multi-version CI and deterministic release acceptance.
+
 ## Unreleased — v1.5.0 governed operations
 
 - Added `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.

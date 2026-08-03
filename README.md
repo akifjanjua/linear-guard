@@ -16,6 +16,10 @@ Writes: `linear.create_issue`, `linear.update_issue`, `linear.triage_issue`, `li
 
 `linear.rebalance_sprint` applies one shared priority, estimate, state, assignee, project, cycle, or label-set decision to 2–5 same-team issues through one preflighted `issueBatchUpdate` request. This closes the loop from `linear.sprint_health` diagnosis to bounded corrective action.
 
+## Station v0.45 egress contract
+
+The signed manifest declares `"allowed_destinations": []`. This means Linear Guard permits **zero LLM/model-provider destinations**. The module does not call Anthropic, OpenAI, Groq, Gemini, xAI, Ollama, or RailCall's model-completion primitive. Its HTTPS traffic is limited to the declared Linear business integration at `api.linear.app`, using the credential obtained from RailCall Vault. CI fails if model-provider SDKs, provider hosts, or `station_llm` usage are introduced.
+
 ## Install
 
 ```bash
@@ -23,7 +27,7 @@ python -m pip install certifi
 railcall market install muhammad-akif-janjua/linear-guard
 ```
 
-Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.0**, **signature verified**, and **16 commands**.
+Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.5.1**, **signature verified**, and **16 commands**.
 
 The release archive is deterministic, includes a per-file SHA-256 manifest, validates after extraction, and is rebuilt byte-for-byte by the public CI workflow before publication.
 

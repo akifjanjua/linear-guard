@@ -1,10 +1,10 @@
-# Linear Guard v1.5.0 Publish Checklist
+# Linear Guard v1.5.1 Publish Checklist
 
 ## 1. Work on a separate branch
 
 ```bash
 cd ~/Projects/linear-guard
-git switch feature/v1.5.0-governed-operations
+git switch feature/v1.5.1-v045-egress-contract
 ```
 
 Do not alter the published v1.4.0 tag.
@@ -68,7 +68,7 @@ python tools/build_release.py
 python tools/release_acceptance_test.py
 ```
 
-Confirm the archive is `dist/linear-guard-v1.5.0.zip`, every packaged hash matches the generated release manifest, a simulated Windows CRLF checkout rebuilds it byte-for-byte, extracted `tools/validate_release.py` passes, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
+Confirm the archive is `dist/linear-guard-v1.5.1.zip`, every packaged hash matches the generated release manifest, a simulated Windows CRLF checkout rebuilds it byte-for-byte, extracted `tools/validate_release.py` passes, and no credentials, receipts, approval codes, patches, caches, or local workspace files are present.
 
 ## 7. Fresh buyer rehearsal
 

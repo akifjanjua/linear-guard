@@ -28,6 +28,8 @@ jobs:
         run: python tools/validate_release.py
       - name: Run security tests
         run: python tools/security_test.py
+      - name: Validate Station v0.45 egress contract
+        run: python tools/v045_egress_contract_test.py
       - name: Run Phase 1 read tests
         run: python tools/v15_read_test.py
       - name: Run Phase 2 triage tests

@@ -32,6 +32,7 @@ OPTIONAL = [
     "docs/TROUBLESHOOTING.md",
     "tools/validate_release.py",
     "tools/security_test.py",
+    "tools/v045_egress_contract_test.py",
     "tools/smoke_test.py",
     "tools/v15_read_test.py",
     "tools/v15_triage_test.py",
