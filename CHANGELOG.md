@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.3 — Marketplace byte-stable entrypoint
+
+- Added a newline-free `handlers/handler.py` bootstrap that remains byte-identical when RailCall Marketplace processes it on Windows.
+- Moved the complete 16-command implementation to `handlers/linear_guard_impl.py`.
+- Prevented CRLF conversion of the marketplace entrypoint from invalidating the signed v2 module tree.
+- Updated release validation and Station v0.45 egress tests to inspect both the bootstrap and implementation files.
+- Preserved all 16 governed Linear commands, `allowed_destinations: []`, vault-only credentials, and approval-controlled writes.
+
 ## 1.5.2 — Signed-tree release integrity
 
 - Corrected the release workflow so archives contain the exact Git-committed tree covered by RailCall's v2 module signature.
