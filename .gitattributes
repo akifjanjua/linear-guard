@@ -9,6 +9,6 @@
 *.yaml text eol=lf
 .gitattributes -text
 .moduleignore -text
-module.json -text -eol whitespace=cr-at-eol
+module.json -text -eol
 module.sig -text
-handlers/handler.py -text -eol whitespace=cr-at-eol
+handlers/handler.py -text -eol

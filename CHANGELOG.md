@@ -4,7 +4,7 @@
 
 - Restored the complete 16-command implementation directly in `handlers/handler.py` to satisfy RailCall Marketplace quality checks.
 - Preserved the identical implementation in `handlers/linear_guard_impl.py`.
-- Configured `handlers/handler.py` and `module.json` for exact CRLF byte preservation on Windows.
+- Encoded `handlers/handler.py` and `module.json` without physical newline bytes so Marketplace text-mode installation preserves identical signed bytes across Windows, Linux, and macOS.
 - Prevented Marketplace text-mode installation from invalidating the signed v2 module tree.
 - Preserved all governed commands, vault-only credentials, zero model-provider destinations, and approval-controlled writes.
 
