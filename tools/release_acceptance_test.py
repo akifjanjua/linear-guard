@@ -51,16 +51,27 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def official_railcall_cli() -> Path | None:
+def official_railcall_command() -> list[str] | None:
     candidates = [
         Path.home() / ".railcall" / "bin" / "railcall",
         Path.home() / ".railcall" / "bin" / "railcall.exe",
     ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    found = shutil.which("railcall")
-    return Path(found) if found else None
+    cli = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if cli is None:
+        found = shutil.which("railcall")
+        cli = Path(found) if found else None
+    if cli is None:
+        return None
+
+    if os.name == "nt" and cli.suffix.lower() != ".exe":
+        bash = shutil.which("bash") or shutil.which("bash.exe")
+        if not bash:
+            fail(
+                "RailCall CLI is a shell script on Windows, but bash was not found"
+            )
+        return [bash, str(cli)]
+
+    return [str(cli)]
 
 
 def main() -> int:
@@ -139,10 +150,10 @@ def main() -> int:
             check=True,
         )
 
-        cli = official_railcall_cli()
-        if cli is not None:
+        cli_command = official_railcall_command()
+        if cli_command is not None:
             subprocess.run(
-                [str(cli), "market", "module", "verify", str(extracted)],
+                [*cli_command, "market", "module", "verify", str(extracted)],
                 cwd=extracted,
                 check=True,
             )
