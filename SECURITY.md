@@ -10,6 +10,10 @@ Never publish API keys, approval codes, local receipt archives, `.env` files, or
 
 All Linear requests use Python `urllib.request` with certificate and hostname verification enabled through a certifi-backed `SSLContext`. The module does not invoke curl, a shell, or another subprocess and never disables TLS verification.
 
+## Model-provider egress contract
+
+For Station v0.45, `module.json` declares `"allowed_destinations": []`. The signed declaration means the module permits no LLM/model-provider calls. Linear GraphQL is the module's business integration endpoint and is not routed through `station_llm.complete`. A dedicated CI test rejects imports, hostnames, or source references associated with supported model providers and rejects any use of `station_llm`.
+
 ## Governance
 
 All six writes—`linear.create_issue`, `linear.update_issue`, `linear.add_comment`, `linear.triage_issue`, `linear.plan_sprint`, and `linear.rebalance_sprint`—are `write_requires_approval`. RailCall binds approval to the exact previewed payload. Without matching approval, the external write is blocked.

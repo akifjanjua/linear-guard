@@ -21,3 +21,7 @@ README URL: [PASTE PUBLIC README URL]
 Demo video: [PASTE UNLISTED YOUTUBE URL]
 
 `contest:2026Q3`
+
+## Station v0.45 trust declaration
+
+Linear Guard's signed manifest declares zero LLM/model-provider destinations. The module talks only to the Linear GraphQL business API and does not send issue data to a model-provider SDK or RailCall model-completion primitive.

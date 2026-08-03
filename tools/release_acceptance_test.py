@@ -32,6 +32,7 @@ REQUIRED_ENTRIES = {
     "requirements.txt",
     "tools/release_acceptance_test.py",
     "tools/security_test.py",
+    "tools/v045_egress_contract_test.py",
     "tools/smoke_test.py",
     "tools/v15_plan_sprint_test.py",
     "tools/v15_read_test.py",
@@ -111,6 +112,8 @@ def main() -> int:
             fail("packaged version differs from source version")
         if len(packaged_module.get("commands") or []) != 16:
             fail("packaged command count is not 16")
+        if packaged_module.get("allowed_destinations") != []:
+            fail("packaged module does not declare zero model-provider destinations")
         if not re.fullmatch(r"[0-9a-fA-F]{128}", signature):
             fail("packaged module signature is not 128 hexadecimal characters")
 
@@ -189,7 +192,7 @@ def main() -> int:
 
     print("PASS: release archive opens and contains unique safe paths")
     print("PASS: all buyer, reviewer, test, and CI evidence files are included")
-    print("PASS: packaged module is v1.5.0 with 16 commands and a valid signature token")
+    print(f"PASS: packaged module is v{version} with 16 commands, zero model-provider destinations, and a valid signature token")
     print("PASS: generated release manifest matches every packaged file hash")
     print("PASS: ZIP metadata and unsigned text files are canonical across LF/CRLF checkouts")
     print("PASS: extracted-package validation succeeds")

@@ -77,6 +77,7 @@ def main() -> int:
         "publisher_pubkey",
         "provider",
         "auth",
+        "allowed_destinations",
         "description",
         "commands",
         "homepage",
@@ -106,6 +107,9 @@ def main() -> int:
     }
     if manifest.get("auth") != expected_auth:
         fail("auth block does not match the reviewer-required Linear vault declaration")
+
+    if manifest.get("allowed_destinations") != []:
+        fail("allowed_destinations must be an explicit empty list (zero model-provider egress)")
 
     if not re.fullmatch(r"\d+\.\d+\.\d+", str(manifest["version"])):
         fail("version must use semantic x.y.z form")
@@ -161,6 +165,19 @@ def main() -> int:
         if re.search(pattern, source):
             fail(f"{label} detected in handler.py")
 
+    model_egress_markers = {
+        "station_llm": r"\bstation_llm\b",
+        "OpenAI SDK/host": r"\bopenai\b|api\.openai\.com",
+        "Anthropic SDK/host": r"\banthropic\b|api\.anthropic\.com",
+        "Groq SDK/host": r"\bgroq\b|api\.groq\.com",
+        "Gemini SDK/host": r"google\.generativeai|generativelanguage\.googleapis\.com",
+        "xAI SDK/host": r"\bxai\b|api\.x\.ai",
+        "Ollama model endpoint": r"\bollama\b|localhost:11434|127\.0\.0\.1:11434",
+    }
+    for label, pattern in model_egress_markers.items():
+        if re.search(pattern, source, flags=re.IGNORECASE):
+            fail(f"undeclared model-provider egress marker detected: {label}")
+
     if "https://api.linear.app/graphql" not in source:
         fail("Linear GraphQL endpoint not found")
 
@@ -195,6 +212,7 @@ def main() -> int:
 
     workflow_text = ci_workflow.read_text(encoding="utf-8")
     for command in (
+        "python tools/v045_egress_contract_test.py",
         "python tools/build_release.py",
         "python tools/release_acceptance_test.py",
     ):
@@ -242,6 +260,7 @@ def main() -> int:
     print("PASS: handler.py parses")
     print("PASS: 16 expected commands are present")
     print("PASS: homepage and tests_url are declared")
+    print("PASS: signed manifest declares zero model-provider destinations")
     print("PASS: all write commands require approval")
     print("PASS: previews and signed receipts are required")
     print("PASS: reviewer-blocked credential and subprocess paths are absent")
