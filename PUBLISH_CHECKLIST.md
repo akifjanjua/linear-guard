@@ -1,4 +1,4 @@
-# Linear Guard v1.5.3 Publish Checklist
+# Linear Guard v1.5.4 Publish Checklist
 
 ## 1. Prepare and commit every signed source change
 
@@ -10,7 +10,7 @@ Before signing, commit every change except `module.sig`:
 git add -A
 git restore --staged module.sig
 git diff --cached --check
-git commit -m "Prepare Linear Guard v1.5.3 signed-tree release"
+git commit -m "Prepare Linear Guard v1.5.4 signed-tree release"
 ```
 
 The working tree must then be clean before the official signing command.
@@ -28,7 +28,7 @@ Commit the generated signature:
 
 ```bash
 git add module.sig
-git commit -m "Sign Linear Guard v1.5.3 module tree"
+git commit -m "Sign Linear Guard v1.5.4 module tree"
 ```
 
 Because RailCall excludes `module.sig` from the signed v2 tree, committing the signature does not change the signed payload.
@@ -54,8 +54,8 @@ The build reads exact blobs from Git `HEAD`; it does not normalize or rewrite si
 Expected assets:
 
 ```text
-dist/linear-guard-v1.5.3.zip
-dist/linear-guard-v1.5.3.files.json
+dist/linear-guard-v1.5.4.zip
+dist/linear-guard-v1.5.4.files.json
 ```
 
 ## 5. Push, review, and merge

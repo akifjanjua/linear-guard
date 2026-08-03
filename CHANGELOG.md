@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.4 — Marketplace handler contract
+
+- Restored the complete 16-command implementation directly in `handlers/handler.py` to satisfy RailCall Marketplace quality checks.
+- Preserved the identical implementation in `handlers/linear_guard_impl.py`.
+- Configured `handlers/handler.py` and `module.json` for exact CRLF byte preservation on Windows.
+- Prevented Marketplace text-mode installation from invalidating the signed v2 module tree.
+- Preserved all governed commands, vault-only credentials, zero model-provider destinations, and approval-controlled writes.
+
 ## 1.5.3 — Marketplace byte-stable entrypoint
 
 - Added a newline-free `handlers/handler.py` bootstrap that remains byte-identical when RailCall Marketplace processes it on Windows.
