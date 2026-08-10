@@ -146,6 +146,26 @@ def signed_tree(root: Path) -> list[tuple[str, str]]:
     return files
 
 
+def is_git_worktree(root: Path) -> bool:
+    """True when root sits inside a Git working tree.
+
+    release_acceptance_test.py runs this verifier against an extracted archive
+    in a temp directory, which carries no Git metadata. The HEAD comparison is
+    meaningless there and must be skipped rather than crash.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
 def assert_local_tree_matches_head(root: Path) -> None:
     local = {relative for relative, _digest in signed_tree(root)}
     committed = set(committed_module_paths(root, include_signature=False))
@@ -153,7 +173,10 @@ def assert_local_tree_matches_head(root: Path) -> None:
         fail(
             "local RailCall tree differs from committed module tree; "
             f"local_only={sorted(local - committed)}, "
-            f"HEAD_only={sorted(committed - local)}"
+            f"HEAD_only={sorted(committed - local)}. "
+            "The signature covers the set of files, so anything listed under "
+            "local_only is signed here but absent from a fresh CI checkout "
+            "(and vice versa). Remove or .moduleignore it, then re-sign."
         )
 
 
@@ -177,6 +200,9 @@ def main() -> int:
         fail("publisher_pubkey must contain 64 hexadecimal characters")
     if len(signature_hex) != 128:
         fail("module.sig must contain 128 hexadecimal characters")
+
+    if is_git_worktree(root):
+        assert_local_tree_matches_head(root)
 
     tree = signed_tree(root)
     tree_manifest = "".join(
