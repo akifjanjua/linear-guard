@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.6 — Declared Sandbox Requirements
+
+- Added a top-level `requires` block to `module.json` declaring the module's sandbox needs: outbound network to `api.linear.app`, no subprocess execution, and no filesystem writes.
+- Left the 16 per-command `requires` fields as empty credential lists; they are unrelated to the top-level sandbox declaration.
+- Preserved `allowed_destinations: []`, keeping the Station v0.45 zero-model-provider-egress contract intact.
+- Preserved the newline-free `module.json` representation and the CR-only `handlers/handler.py` encoding.
+- Excluded editor and backup artefacts (`*.bak`, `*.orig`, `*.rej`, `*.backup-*`) and the local `.claude/` directory from `.moduleignore`, so untracked working-directory files can no longer enter the signed module tree.
+- Wired the previously unused `assert_local_tree_matches_head` check into `tools/verify_module_tree.py`, so a local tree that differs from `HEAD` fails with the offending paths instead of an opaque `InvalidSignature`. The check is skipped when the target is not a Git working tree, so extracted-archive verification is unaffected.
+
 ## 1.5.5 — CR-Only Marketplace Handler Contract
 
 - Restored all 16 command implementations as real top-level functions in `handlers/handler.py`.

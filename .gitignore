@@ -6,3 +6,9 @@ __pycache__/
 .pytest_cache/
 dist/
 linear-guard-smoke-report.json
+.claude/
+*.bak
+*.orig
+*.rej
+*.backup-*
+*.backup
