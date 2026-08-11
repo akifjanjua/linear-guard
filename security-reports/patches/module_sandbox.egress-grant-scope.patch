@@ -1,0 +1,147 @@
+--- orig/module_sandbox.py	2026-08-12 01:02:31.389066600 +0500
++++ fixed/module_sandbox.py	2026-08-12 01:08:43.392275000 +0500
+@@ -68,6 +68,7 @@
+ import fnmatch
+ import os
+ import sys
++import urllib.parse
+ from typing import Any, Callable, Iterable
+ 
+ 
+@@ -205,16 +206,31 @@
+ def _hostname_of(url_or_host: str) -> str:
+     """Extract the bare hostname from either a URL ('https://x.com/foo')
+     or a raw host ('x.com'). Case-lowered for consistent allowlist
+-    matching."""
++    matching.
++
++    Uses urllib.parse so this agrees with the parser urllib/http.client
++    actually dial with. The hand-rolled split disagreed on RFC-3986 userinfo:
++      'https://api.linear.app:@evil.example/' -> 'api.linear.app'
++                                                (real host: evil.example)
++      'https://user:pass@api.linear.app/'     -> 'user'
++                                                (real host: api.linear.app)
++    The first let the gate ALLOW a host it should refuse; the second made it
++    REFUSE a host it should allow.
++    """
+     s = str(url_or_host).strip()
+-    if "://" in s:
+-        # strip scheme
+-        s = s.split("://", 1)[1]
+-    # strip path/query
+-    s = s.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+-    # strip port
+-    s = s.split(":", 1)[0]
+-    return s.lower()
++    try:
++        if "://" in s:
++            host = urllib.parse.urlsplit(s).hostname or ""
++        else:
++            # Bare 'host' or 'host:port' — give urlsplit a scheme so its
++            # netloc parser (userinfo / IPv6 / port aware) does the work.
++            host = urllib.parse.urlsplit("//" + s).hostname or ""
++    except ValueError:
++        # Malformed authority (bad IPv6 literal, bad port). Fail closed with a
++        # sentinel no real hostname equals, so the allowlist refuses it and the
++        # violation message stays readable.
++        return "invalid-authority"
++    return host.lower()
+ 
+ 
+ def _host_matches(host: str, patterns: Iterable[str]) -> bool:
+@@ -227,6 +243,29 @@
+     return False
+ 
+ 
++def _addr_belongs_to(ip: str, hostname: str) -> bool:
++    """True if `ip` is one of the addresses `hostname` currently resolves to.
++
++    Defence in depth behind the connect-scoped grant: the grant names a HOST,
++    but the socket dials an ADDRESS, and nothing otherwise ties the two
++    together.
++
++    Fails OPEN when resolution itself fails (no DNS on this box, transient
++    SERVFAIL) — the scoping is the primary control and hard-failing here would
++    break offline runs the gate is not meant to police. Fails CLOSED when
++    resolution succeeds and the address is simply not in the answer set, which
++    is the case that matters.
++    """
++    import socket as _s
++    try:
++        infos = _s.getaddrinfo(hostname, None)
++    except Exception:
++        return True  # cannot resolve -> do not manufacture a denial
++    if not infos:
++        return True
++    return ip in {i[4][0] for i in infos}
++
++
+ def _path_matches(path: str, patterns: Iterable[str]) -> bool:
+     """fnmatch-style path allowlist against ABSOLUTE paths. Callers
+     resolve to abspath before checking; a '**' in the pattern matches
+@@ -287,6 +326,7 @@
+ 
+     _real_urlopen = _urlreq.urlopen
+     _real_httpconn_init = _http.HTTPConnection.__init__
++    _real_httpconn_connect = _http.HTTPConnection.connect
+     _real_socket_connect = _socket.socket.connect
+ 
+     # v0.56 (#220, Dave): threadlocal stash of the hostname the caller
+@@ -351,9 +391,31 @@
+             return _real_httpconn_init(self, host, *args, **kwargs)
+         cur_slug, cur_allow = active
+         _check(host, "http.client.HTTPConnection", cur_slug, cur_allow)
+-        _tls.approved_host = _hostname_of(host)
++        # Record the approved name ON THIS CONNECTION, not on the thread.
++        # Arming the thread here left the grant standing for the life of the
++        # thread — and __init__ opens no socket, so a module could construct
++        # one allowlisted HTTPConnection and then socket.connect() to ANY ip
++        # literal afterwards. _wrapped_httpconn_connect below arms the grant
++        # only for the duration of the real connect.
++        self._rc_approved_host = _hostname_of(host)
+         return _real_httpconn_init(self, host, *args, **kwargs)
+ 
++    def _wrapped_httpconn_connect(self, *args, **kwargs):
++        # The ONLY window in which a raw-IP socket.connect is authorised: the
++        # dynamic extent of this connection's own connect(). try/finally so an
++        # exception mid-dial cannot leave the grant armed. Covers every address
++        # create_connection tries (a host resolving to both A and AAAA records
++        # legitimately connects more than once).
++        active = _ACTIVE_SANDBOX.get()
++        if active is None:
++            return _real_httpconn_connect(self, *args, **kwargs)
++        prev = getattr(_tls, "approved_host", None)
++        _tls.approved_host = getattr(self, "_rc_approved_host", None)
++        try:
++            return _real_httpconn_connect(self, *args, **kwargs)
++        finally:
++            _tls.approved_host = prev
++
+     def _wrapped_socket_connect(self, address, *args, **kwargs):
+         # address is (host, port) for AF_INET/AF_INET6; skip AF_UNIX
+         # sockets since we can't hostname-match a filesystem socket.
+@@ -374,6 +436,16 @@
+                     if approved:
+                         _check(approved, "socket.connect(resolved from " + approved + ")",
+                                cur_slug, cur_allow)
++                        # The grant names a HOST; we are dialling an ADDRESS.
++                        # Confirm the address really belongs to that host, so a
++                        # raced or rebound answer cannot ride an otherwise
++                        # legitimate grant to an unrelated endpoint.
++                        if not _addr_belongs_to(host, approved):
++                            raise SandboxViolation(
++                                f"module {cur_slug!r} tried socket.connect to {host!r}, "
++                                f"which is not a current address of the approved host "
++                                f"{approved!r} — refusing (possible DNS rebinding)."
++                            )
+                     else:
+                         raise SandboxViolation(
+                             f"module {cur_slug!r} tried socket.connect to raw IP {host!r} "
+@@ -387,6 +459,7 @@
+ 
+     _urlreq.urlopen = _wrapped_urlopen  # type: ignore[assignment]
+     _http.HTTPConnection.__init__ = _wrapped_httpconn_init  # type: ignore[assignment]
++    _http.HTTPConnection.connect = _wrapped_httpconn_connect  # type: ignore[assignment]
+     _socket.socket.connect = _wrapped_socket_connect  # type: ignore[assignment]
+     _NET_GATE_INSTALLED = True
+ 

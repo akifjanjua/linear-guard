@@ -1,0 +1,29 @@
+--- orig/railcall_cli.py	2026-08-12 01:02:31.441149900 +0500
++++ fixed/railcall_cli.py	2026-08-12 01:04:31.295644200 +0500
+@@ -5571,10 +5571,24 @@
+         return 1
+ 
+     try:
+-        with open(manifest_path, "r", encoding="utf-8") as f:
++        # newline="" on BOTH canonical files: text mode defaults to universal
++        # newlines, which rewrites \r\n AND lone \r to \n on read. The signed
++        # tree is hashed from the RAW bytes (_module_tree_walk opens "rb"), so
++        # any translation here silently uploads a payload that no longer
++        # matches what was signed.
++        #
++        # Concretely: a CR-only handlers/handler.py (the encoding v1.5.x
++        # modules adopted for marketplace newline-stability) was read as
++        # LF-only, shipped as payload["handler_py"], and written verbatim by
++        # the installer — which since v0.77 correctly uses newline="" — so the
++        # buyer's tree hash mismatched and the module was rejected as
++        # "files edited after sign". The tarball and tree_manifest were fine;
++        # only this redundant payload string was corrupt, which is why publish's
++        # own signature self-check still passed.
++        with open(manifest_path, "r", encoding="utf-8", newline="") as f:
+             manifest_text = f.read()
+             manifest = json.loads(manifest_text)
+-        with open(handler_path, "r", encoding="utf-8") as f:
++        with open(handler_path, "r", encoding="utf-8", newline="") as f:
+             handler_text = f.read()
+         with open(sig_path, "r", encoding="utf-8") as f:
+             module_sig = f.read().strip()
