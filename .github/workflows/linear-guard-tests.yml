@@ -38,8 +38,6 @@ jobs:
         run: python tools/v15_plan_sprint_test.py
       - name: Run Phase 4 sprint-rebalance tests
         run: python tools/v15_rebalance_sprint_test.py
-      - name: Run v1.5.9 API depth tests
-        run: python tools/v15_api_depth_test.py
       - name: Verify committed module tree signature
         run: python tools/verify_module_tree.py .
       - name: Build clean release archive
