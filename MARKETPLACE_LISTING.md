@@ -1,6 +1,6 @@
 Linear Guard is a governance-first Linear integration for engineering, product, and operations teams that want AI-assisted issue work without unrestricted write access.
 
-Its signed Station v0.45 manifest declares zero LLM/model-provider destinations (`allowed_destinations: []`): Linear issue data is not sent to a model by the module.
+Its signed Station v0.45 manifest declares `allowed_destinations: [{"provider":"linear","hosts":["api.linear.app"]}]`: the only permitted egress is Linear's own API, zero LLM/model-provider destinations — Linear issue data is not sent to a model by the module.
 
 It provides 16 focused commands: 10 low-risk discovery and reporting commands plus 6 approval-controlled writes. The module can discover teams, projects, labels, workflow states, members, and cycles; search and retrieve issues; analyze sprint health; create and update issues; add comments; apply a complete triage decision; create a bounded sprint plan, and rebalance an existing sprint in one batch.
 

@@ -48,8 +48,12 @@ def main() -> int:
 
     if "allowed_destinations" not in manifest:
         fail("module.json does not declare allowed_destinations")
-    if manifest["allowed_destinations"] != []:
-        fail("Linear Guard must declare an explicit empty model-provider destination list")
+    expected_allowed_destinations = [{"provider": "linear", "hosts": ["api.linear.app"]}]
+    if manifest["allowed_destinations"] != expected_allowed_destinations:
+        fail(
+            "Linear Guard must declare allowed_destinations as exactly the Linear "
+            f"API host ({expected_allowed_destinations!r}) and no LLM/model-provider entries"
+        )
 
     imported_roots: set[str] = set()
     for node in ast.walk(tree):
@@ -71,7 +75,7 @@ def main() -> int:
     if 'vault_get("linear")' not in source:
         fail("Linear credential is not resolved through RailCall Vault")
 
-    print("PASS: module.json explicitly declares allowed_destinations: []")
+    print("PASS: module.json explicitly declares allowed_destinations as the Linear API host only")
     print("PASS: handler imports no supported model-provider SDK")
     print("PASS: handler contains no supported model-provider host or station_llm marker")
     print("PASS: api.linear.app remains the declared business integration endpoint")

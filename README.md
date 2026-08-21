@@ -4,6 +4,8 @@
 
 Linear Guard is a governance-first RailCall module for engineering, product, and operations teams using Linear. It provides 16 focused commands for discovery, sprint reporting, and approval-controlled issue operations through the real Linear GraphQL API.
 
+Demo video: [60-second walkthrough](https://drive.google.com/file/d/1Q40bT-Fdx2EtL2JJ021v-MZpjPrqHzDi/view?usp=sharing)
+
 ## Commands
 
 Reads: `linear.get_current_user`, `linear.list_teams`, `linear.list_projects`, `linear.list_labels`, `linear.list_workflow_states`, `linear.search_issues`, `linear.get_issue`, `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
@@ -18,7 +20,7 @@ Writes: `linear.create_issue`, `linear.update_issue`, `linear.triage_issue`, `li
 
 ## Station v0.45 egress contract
 
-The signed manifest declares `"allowed_destinations": []`. This means Linear Guard permits **zero LLM/model-provider destinations**. The module does not call Anthropic, OpenAI, Groq, Gemini, xAI, Ollama, or RailCall's model-completion primitive. Its HTTPS traffic is limited to the declared Linear business integration at `api.linear.app`, using the credential obtained from RailCall Vault. CI fails if model-provider SDKs, provider hosts, or `station_llm` usage are introduced.
+The signed manifest declares `"allowed_destinations": [{"provider":"linear","hosts":["api.linear.app"]}]`. This pins Linear Guard's only permitted egress to the Linear GraphQL API and declares **zero LLM/model-provider destinations**. The module does not call Anthropic, OpenAI, Groq, Gemini, xAI, Ollama, or RailCall's model-completion primitive. The sandbox network allowlist (`requires.network`) enforces the same host at runtime. CI fails if model-provider SDKs, provider hosts, or `station_llm` usage are introduced.
 
 ## Install
 
@@ -33,7 +35,7 @@ The release archive is built from immutable Git `HEAD` bytes, reproduces byte-fo
 
 ## Configure credentials
 
-Create a Linear personal API key at `https://linear.app/settings/api`. In **RailCall Studio → Integrations → Linear**, save it as `LINEAR_API_KEY`. Credentials are resolved only through `vault_get("linear")`.
+Create a Linear personal API key at `https://linear.app/settings/api`. In **RailCall Studio → Integrations → Linear**, the module's `credential_spec` prompts for it as `LINEAR_API_KEY`; RailCall stores it and the handler resolves it only through `vault_get("linear")`.
 
 ## Governed sprint example
 
