@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.7 — Credential Spec, Declared Egress Host, LF Handler Encoding
+
+- Added a `credential_spec` block (`provider`, `category`, `name`, `required: ["LINEAR_API_KEY"]`, `optional`, `shape`, `risk`, `read_write`) so RailCall Studio's Integrations → Linear Configure prompt renders correctly.
+- Changed `allowed_destinations` from `[]` to `[{"provider":"linear","hosts":["api.linear.app"]}]`, matching the convention used by every other module on the platform (including RailCall's own internal modules): egress is declared as `{provider, hosts}` regardless of whether the provider is an LLM. This still declares zero LLM/model-provider destinations — the sole entry names the Linear business API itself. `requires.network` continues to be the runtime sandbox enforcement of the same host.
+- Re-encoded `handlers/handler.py` from CR-only to plain LF line endings. `railcall market publish` reads `handler.py` in text mode without `newline=""`, which silently converts CR bytes to LF before embedding the string in the publish payload; a CR-only file therefore corrupts on publish even though the local signature stays valid. LF-only content passes through that read unchanged, so the published payload now matches what was signed.
+- Updated `tools/validate_release.py` and `tools/v045_egress_contract_test.py` to assert the new `allowed_destinations` and `credential_spec` values instead of requiring an empty list.
+- Added a demo video link to `README.md`.
+
 ## 1.5.6 — Declared Sandbox Requirements
 
 - Added a top-level `requires` block to `module.json` declaring the module's sandbox needs: outbound network to `api.linear.app`, no subprocess execution, and no filesystem writes.
