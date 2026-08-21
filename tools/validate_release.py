@@ -36,6 +36,8 @@ EXPECTED_COMMANDS = {
     "linear.archive_label": "write_requires_approval",
     "linear.archive_issue": "write_requires_approval",
     "linear.update_comment": "write_requires_approval",
+    "linear.create_attachment": "write_requires_approval",
+    "linear.link_issues": "write_requires_approval",
 }
 
 FORBIDDEN_SOURCE_PATTERNS = {
@@ -261,7 +263,7 @@ def main() -> int:
 
     print("PASS: module.json is valid")
     print("PASS: handler.py parses")
-    print("PASS: 20 expected commands are present")
+    print("PASS: 22 expected commands are present")
     print("PASS: homepage and tests_url are declared")
     print("PASS: signed manifest declares its egress destination (linear API only, zero LLM/model-provider destinations)")
     print("PASS: credential_spec matches the reviewer-required Linear declaration")

@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.6.0 — Attachments and Issue Relations
+
+Completes the API-depth roadmap identified by competitive research (priority
+4, deferred from v1.5.9). Same discipline as v1.5.9: every mutation shape
+verified against Linear's live GraphQL schema via unauthenticated
+introspection against `api.linear.app/graphql` before any handler code was
+written. This round had no discrepancies with the initial research — both
+mutations, both input types, and both payload shapes matched expectations —
+except one confirmed addition: `IssueRelationType` has four values on the
+live schema (`blocks`, `duplicate`, `related`, `similar`), one more than the
+three originally named; `similar` is included since it's real and adds
+coverage.
+
+- Added `linear.create_attachment` (`attachmentCreate`) — attaches an
+  external URL to an issue. `AttachmentCreateInput` requires `title`, `url`,
+  and `issueId`; `subtitle` is optional. `risk: medium`.
+- Added `linear.link_issues` (`issueRelationCreate`) — creates a typed
+  relation between two issues: `blocks`, `duplicate`, `related`, or
+  `similar`. `risk: medium`.
+- Command count: 20 → 22 (10 read, 12 write). `handlers/handler.py` and
+  `handlers/linear_guard_impl.py` stay byte-identical, both LF-only.
+- Added `tools/v16_attachments_relations_test.py`, unit-testing both new
+  commands against a monkeypatched `_graphql`, including all four relation
+  types and validation-failure paths. Wired into CI.
+
 ## 1.5.9 — Label Lifecycle, Issue Archive, Comment Update
 
 Competitive research against a higher-scoring free module on the same rubric

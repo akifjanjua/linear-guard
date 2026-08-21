@@ -1459,6 +1459,237 @@ def linear_update_comment(inputs, stamp):
     }, None
 
 
+def linear_create_attachment(inputs, stamp):
+    """Attach an external URL to a Linear issue."""
+    issue_id = inputs.get("issue_id")
+    title = inputs.get("title")
+    url = inputs.get("url")
+    subtitle = inputs.get("subtitle")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError("issue_id must be 200 characters or fewer.")
+
+    if not isinstance(title, str) or not title.strip():
+        raise RuntimeError(
+            "title must be a non-empty string."
+        )
+
+    title = title.strip()
+
+    if len(title) > 255:
+        raise RuntimeError("title must be 255 characters or fewer.")
+
+    if not isinstance(url, str) or not url.strip():
+        raise RuntimeError(
+            "url must be a non-empty string."
+        )
+
+    url = url.strip()
+
+    if len(url) > 2000:
+        raise RuntimeError("url must be 2000 characters or fewer.")
+
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        raise RuntimeError("url must start with http:// or https://.")
+
+    attachment_input = {
+        "issueId": issue_id,
+        "title": title,
+        "url": url,
+    }
+
+    if subtitle is not None:
+        if not isinstance(subtitle, str):
+            raise RuntimeError(
+                "subtitle must be a string when supplied."
+            )
+        if len(subtitle) > 255:
+            raise RuntimeError("subtitle must be 255 characters or fewer.")
+        attachment_input["subtitle"] = subtitle
+
+    status, data = _graphql(
+        """
+        mutation RailCallCreateAttachment($input: AttachmentCreateInput!) {
+          attachmentCreate(input: $input) {
+            success
+            attachment {
+              id
+              title
+              subtitle
+              url
+              createdAt
+              issue {
+                id
+                identifier
+              }
+            }
+          }
+        }
+        """,
+        {"input": attachment_input},
+        is_write=True,
+    )
+
+    payload = data.get("attachmentCreate")
+    attachment = payload.get("attachment") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(attachment, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm attachment creation."
+        )
+
+    linked_issue = attachment.get("issue")
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "attachment_id": str(attachment.get("id") or ""),
+        "title": str(attachment.get("title") or ""),
+        "subtitle": str(attachment.get("subtitle") or ""),
+        "url": str(attachment.get("url") or ""),
+        "created_at": str(attachment.get("createdAt") or ""),
+        "issue_id": (
+            str(linked_issue.get("id") or "")
+            if isinstance(linked_issue, dict)
+            else ""
+        ),
+        "issue_identifier": (
+            str(linked_issue.get("identifier") or "")
+            if isinstance(linked_issue, dict)
+            else ""
+        ),
+    }, None
+
+
+_ISSUE_RELATION_TYPES = {"blocks", "duplicate", "related", "similar"}
+
+
+def linear_link_issues(inputs, stamp):
+    """Create a typed relation (blocks, duplicate, related, or similar) between two Linear issues."""
+    issue_id = inputs.get("issue_id")
+    related_issue_id = inputs.get("related_issue_id")
+    relation_type = inputs.get("type")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError("issue_id must be 200 characters or fewer.")
+
+    if not isinstance(related_issue_id, str) or not related_issue_id.strip():
+        raise RuntimeError(
+            "related_issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    related_issue_id = related_issue_id.strip()
+
+    if len(related_issue_id) > 200:
+        raise RuntimeError("related_issue_id must be 200 characters or fewer.")
+
+    if issue_id == related_issue_id:
+        raise RuntimeError(
+            "issue_id and related_issue_id must refer to different issues."
+        )
+
+    if not isinstance(relation_type, str) or relation_type.strip() not in _ISSUE_RELATION_TYPES:
+        raise RuntimeError(
+            "type must be one of: " + ", ".join(sorted(_ISSUE_RELATION_TYPES)) + "."
+        )
+
+    relation_type = relation_type.strip()
+
+    status, data = _graphql(
+        """
+        mutation RailCallLinkIssues($input: IssueRelationCreateInput!) {
+          issueRelationCreate(input: $input) {
+            success
+            issueRelation {
+              id
+              type
+              createdAt
+              issue {
+                id
+                identifier
+              }
+              relatedIssue {
+                id
+                identifier
+              }
+            }
+          }
+        }
+        """,
+        {
+            "input": {
+                "issueId": issue_id,
+                "relatedIssueId": related_issue_id,
+                "type": relation_type,
+            }
+        },
+        is_write=True,
+    )
+
+    payload = data.get("issueRelationCreate")
+    relation = payload.get("issueRelation") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(relation, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the issue relation."
+        )
+
+    source_issue = relation.get("issue")
+    target_issue = relation.get("relatedIssue")
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "relation_id": str(relation.get("id") or ""),
+        "type": str(relation.get("type") or ""),
+        "created_at": str(relation.get("createdAt") or ""),
+        "issue_id": (
+            str(source_issue.get("id") or "")
+            if isinstance(source_issue, dict)
+            else ""
+        ),
+        "issue_identifier": (
+            str(source_issue.get("identifier") or "")
+            if isinstance(source_issue, dict)
+            else ""
+        ),
+        "related_issue_id": (
+            str(target_issue.get("id") or "")
+            if isinstance(target_issue, dict)
+            else ""
+        ),
+        "related_issue_identifier": (
+            str(target_issue.get("identifier") or "")
+            if isinstance(target_issue, dict)
+            else ""
+        ),
+    }, None
+
+
 def _optional_boolean(inputs, name):
     """Read one optional boolean from RailCall form or JSON inputs."""
     if name not in inputs:
