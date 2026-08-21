@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.5.9 — Label Lifecycle, Issue Archive, Comment Update
+
+Competitive research against a higher-scoring free module on the same rubric
+(dihanadil25/gitlab-governance) identified read-only entities and missing
+lifecycle operations as the largest remaining API-depth gap. Every new
+mutation shape below was verified against Linear's live GraphQL schema via
+unauthenticated introspection (`api.linear.app/graphql`) before being coded,
+not assumed from documentation summaries — one assumption from the initial
+research (a mutation named `issueLabelArchive`) turned out not to exist on
+the live schema and was corrected to the real equivalent, `issueLabelRetire`,
+during verification.
+
+- Added `linear.create_label` (`issueLabelCreate`) — create an issue label,
+  optionally scoped to one team, with name/color/description. `risk: medium`.
+- Added `linear.archive_label` (`issueLabelRetire`) — Linear's API calls this
+  operation "retire," not "archive"; there is no `issueLabelArchive`
+  mutation. Retiring hides the label from pickers while preserving every
+  existing issue association and all history. `risk: medium`.
+- Added `linear.archive_issue` (`issueArchive`) — archives an issue,
+  optionally moving it to trash via the mutation's own `trash` argument.
+  `risk: high`, higher than every other write command, since it is the most
+  consequential of the ten write commands. `issueArchive` returns only
+  `{success, lastSyncId}` with no updated entity, so the command echoes the
+  requested `issue_id` rather than inventing fields Linear's API does not
+  return.
+- Added `linear.update_comment` (`commentUpdate`) — updates the body of an
+  existing comment; genuine depth beyond parity with the researched
+  competitor, which does not expose comment editing either.
+- Command count: 16 → 20 (10 read, 10 write). `handlers/handler.py` and
+  `handlers/linear_guard_impl.py` stay byte-identical; both re-encoded
+  LF-only, matching the v1.5.7 encoding fix.
+- Added `tools/v15_api_depth_test.py`, unit-testing all four new commands
+  against a monkeypatched `_graphql`, matching the existing test suite's
+  style. Wired into CI.
+
+## 1.5.8 — Video URL, License Required
+
+- Added `video_url` as a top-level `module.json` field, pointing at the
+  recorded demo walkthrough. Confirmed via competitive research that the
+  marketplace backend lifts this field onto the listing the same way it
+  already does for `homepage`/`tests_url`, neither of which has special
+  CLI-side handling in `railcall market publish` either.
+- Added `license_required: false` for manifest completeness, matching the
+  explicit declaration convention used by other real modules on the
+  platform.
+
 ## 1.5.7 — Credential Spec, Declared Egress Host, LF Handler Encoding
 
 - Added a `credential_spec` block (`provider`, `category`, `name`, `required: ["LINEAR_API_KEY"]`, `optional`, `shape`, `risk`, `read_write`) so RailCall Studio's Integrations → Linear Configure prompt renders correctly.

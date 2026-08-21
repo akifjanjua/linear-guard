@@ -6,7 +6,7 @@ Linear Guard — Governed Linear Integration
 
 ## Description
 
-I built Linear Guard as a signed RailCall module for real Linear workspaces. It provides 16 focused commands covering workspace discovery, sprint health, approval-controlled issue work, governed triage, transactional sprint planning, and bounded multi-issue sprint rebalancing.
+I built Linear Guard as a signed RailCall module for real Linear workspaces. It provides 20 focused commands covering workspace discovery, sprint health, approval-controlled issue and label lifecycle work, governed triage, transactional sprint planning, and bounded multi-issue sprint rebalancing.
 
 The six write commands cannot run silently. RailCall previews the exact payload, blocks it until a human approves it, executes only the approved action, and records the result in a signed receipt that can be independently verified.
 

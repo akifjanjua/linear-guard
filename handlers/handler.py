@@ -1164,6 +1164,300 @@ def linear_add_comment(inputs, stamp):
     }, None
 
 
+def linear_create_label(inputs, stamp):
+    """Create a Linear issue label, optionally scoped to one team."""
+    name = inputs.get("name")
+    team_id = inputs.get("team_id")
+    color = inputs.get("color")
+    description = inputs.get("description")
+
+    if not isinstance(name, str) or not name.strip():
+        raise RuntimeError(
+            "name must be a non-empty string."
+        )
+
+    name = name.strip()
+
+    if len(name) > 255:
+        raise RuntimeError("name must be 255 characters or fewer.")
+
+    label_input = {"name": name}
+
+    if team_id is not None:
+        if not isinstance(team_id, str) or not team_id.strip():
+            raise RuntimeError(
+                "team_id must be a non-empty Linear team UUID when supplied."
+            )
+        team_id = team_id.strip()
+        if len(team_id) > 200:
+            raise RuntimeError("team_id must be 200 characters or fewer.")
+        label_input["teamId"] = team_id
+
+    if color is not None:
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color.strip()):
+            raise RuntimeError(
+                "color must be a hex color like #4EA7FC when supplied."
+            )
+        label_input["color"] = color.strip()
+
+    if description is not None:
+        if not isinstance(description, str):
+            raise RuntimeError(
+                "description must be a string when supplied."
+            )
+        if len(description) > 2000:
+            raise RuntimeError("description must be 2000 characters or fewer.")
+        label_input["description"] = description
+
+    status, data = _graphql(
+        """
+        mutation RailCallCreateLabel($input: IssueLabelCreateInput!) {
+          issueLabelCreate(input: $input) {
+            success
+            issueLabel {
+              id
+              name
+              color
+              description
+              isGroup
+              team {
+                id
+                name
+              }
+            }
+          }
+        }
+        """,
+        {"input": label_input},
+        is_write=True,
+    )
+
+    payload = data.get("issueLabelCreate")
+    label = payload.get("issueLabel") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(label, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm label creation."
+        )
+
+    team = label.get("team")
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "label_id": str(label.get("id") or ""),
+        "name": str(label.get("name") or ""),
+        "color": str(label.get("color") or ""),
+        "description": str(label.get("description") or ""),
+        "is_group": bool(label.get("isGroup")),
+        "team_id": str(team.get("id") or "") if isinstance(team, dict) else "",
+        "team_name": str(team.get("name") or "") if isinstance(team, dict) else "",
+    }, None
+
+
+def linear_archive_label(inputs, stamp):
+    """
+    Archive a Linear issue label.
+
+    Linear's API names this operation "retire" (issueLabelRetire), not
+    "archive" -- there is no issueLabelArchive mutation. Retiring hides the
+    label from pickers while preserving every existing issue association and
+    all history; it can be brought back through Linear's own UI or the
+    issueLabelRestore mutation, which this module does not expose. The
+    command is named archive_label to match RailCall's convention for this
+    kind of governed soft-removal.
+    """
+    label_id = inputs.get("label_id")
+
+    if not isinstance(label_id, str) or not label_id.strip():
+        raise RuntimeError(
+            "label_id must be a non-empty Linear label UUID."
+        )
+
+    label_id = label_id.strip()
+
+    if len(label_id) > 200:
+        raise RuntimeError("label_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallArchiveLabel($labelId: String!) {
+          issueLabelRetire(id: $labelId) {
+            success
+            issueLabel {
+              id
+              name
+              retiredAt
+            }
+          }
+        }
+        """,
+        {"labelId": label_id},
+        is_write=True,
+    )
+
+    payload = data.get("issueLabelRetire")
+    label = payload.get("issueLabel") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(label, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the label archive."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "label_id": str(label.get("id") or ""),
+        "name": str(label.get("name") or ""),
+        "retired_at": str(label.get("retiredAt") or ""),
+    }, None
+
+
+def linear_archive_issue(inputs, stamp):
+    """
+    Archive a Linear issue, optionally moving it to trash.
+
+    Linear's issueArchive mutation returns only {success, lastSyncId} -- no
+    updated issue entity -- so this command echoes the requested issue_id
+    rather than returning fields Linear's API does not provide here.
+    """
+    issue_id = inputs.get("issue_id")
+    trash = inputs.get("trash", False)
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError("issue_id must be 200 characters or fewer.")
+
+    if not isinstance(trash, bool):
+        raise RuntimeError(
+            "trash must be a boolean when supplied."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallArchiveIssue($issueId: String!, $trash: Boolean) {
+          issueArchive(id: $issueId, trash: $trash) {
+            success
+          }
+        }
+        """,
+        {"issueId": issue_id, "trash": trash},
+        is_write=True,
+    )
+
+    payload = data.get("issueArchive")
+
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise RuntimeError(
+            "Linear did not confirm the issue archive."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "issue_id": issue_id,
+        "archived": True,
+        "trashed": trash,
+    }, None
+
+
+def linear_update_comment(inputs, stamp):
+    """Update the body of an existing Linear comment."""
+    comment_id = inputs.get("comment_id")
+    body = inputs.get("body")
+
+    if not isinstance(comment_id, str) or not comment_id.strip():
+        raise RuntimeError(
+            "comment_id must be a non-empty Linear comment UUID."
+        )
+
+    comment_id = comment_id.strip()
+
+    if len(comment_id) > 200:
+        raise RuntimeError("comment_id must be 200 characters or fewer.")
+
+    if not isinstance(body, str) or not body.strip():
+        raise RuntimeError(
+            "body must be a non-empty string."
+        )
+
+    body = body.strip()
+
+    if len(body) > 100000:
+        raise RuntimeError(
+            "body must be 100000 characters or fewer."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallUpdateComment(
+          $commentId: String!
+          $input: CommentUpdateInput!
+        ) {
+          commentUpdate(id: $commentId, input: $input) {
+            success
+            comment {
+              id
+              body
+              updatedAt
+              editedAt
+            }
+          }
+        }
+        """,
+        {"commentId": comment_id, "input": {"body": body}},
+        is_write=True,
+    )
+
+    payload = data.get("commentUpdate")
+    comment = payload.get("comment") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(comment, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the comment update."
+        )
+
+    returned_body = comment.get("body")
+
+    if not isinstance(returned_body, str):
+        returned_body = ""
+
+    body_preview = returned_body[:200]
+
+    if len(returned_body) > len(body_preview):
+        body_preview += "…"
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "comment_id": str(comment.get("id") or ""),
+        "body_preview": body_preview,
+        "updated_at": str(comment.get("updatedAt") or ""),
+        "edited_at": str(comment.get("editedAt") or ""),
+    }, None
+
 
 def _optional_boolean(inputs, name):
     """Read one optional boolean from RailCall form or JSON inputs."""
