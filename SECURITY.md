@@ -12,7 +12,7 @@ All Linear requests use Python `urllib.request` with certificate and hostname ve
 
 ## Model-provider egress contract
 
-For Station v0.45, `module.json` declares `"allowed_destinations": []`. The signed declaration means the module permits no LLM/model-provider calls. Linear GraphQL is the module's business integration endpoint and is not routed through `station_llm.complete`. A dedicated CI test rejects imports, hostnames, or source references associated with supported model providers and rejects any use of `station_llm`.
+For Station v0.45, `module.json` declares `"allowed_destinations": [{"provider":"linear","hosts":["api.linear.app"]}]`. The signed declaration pins the module's only egress to the Linear GraphQL API and permits no LLM/model-provider calls; it is not routed through `station_llm.complete`. A dedicated CI test rejects imports, hostnames, or source references associated with supported model providers and rejects any use of `station_llm`.
 
 ## Governance
 
