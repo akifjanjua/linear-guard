@@ -41,7 +41,9 @@ jobs:
       - name: Run v1.5.9 API depth tests
         run: python tools/v15_api_depth_test.py
       - name: Run v1.6.0 attachments and issue relations tests
-        run: python tools/v16_attachments_relations_test.py   
+        run: python tools/v16_attachments_relations_test.py
+      - name: Run v1.6.1 parent linking and issue history tests
+        run: python tools/v16_parent_history_test.py
       - name: Verify committed module tree signature
         run: python tools/verify_module_tree.py .
       - name: Build clean release archive
