@@ -799,6 +799,7 @@ def linear_create_issue(inputs, stamp):
     team_id = inputs.get("team_id")
     title = inputs.get("title")
     description = inputs.get("description")
+    parent_id = inputs.get("parent_id")
 
     if not isinstance(team_id, str) or not team_id.strip():
         raise RuntimeError(
@@ -827,6 +828,22 @@ def linear_create_issue(inputs, stamp):
     if len(description) > 100000:
         raise RuntimeError("description must be 100000 characters or fewer.")
 
+    create_input = {
+        "teamId": team_id,
+        "title": title,
+        "description": description,
+    }
+
+    if parent_id is not None:
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            raise RuntimeError(
+                "parent_id must be a non-empty Linear issue UUID or identifier when supplied."
+            )
+        parent_id = parent_id.strip()
+        if len(parent_id) > 200:
+            raise RuntimeError("parent_id must be 200 characters or fewer.")
+        create_input["parentId"] = parent_id
+
     status, data = _graphql(
         """
         mutation RailCallCreateIssue($input: IssueCreateInput!) {
@@ -841,13 +858,7 @@ def linear_create_issue(inputs, stamp):
           }
         }
         """,
-        {
-            "input": {
-                "teamId": team_id,
-                "title": title,
-                "description": description,
-            }
-        },
+        {"input": create_input},
         is_write=True,
     )
 
@@ -976,10 +987,30 @@ def linear_update_issue(inputs, stamp):
 
         update_input["priority"] = priority
 
+    parent_id = inputs.get("parent_id")
+    clear_parent = _optional_boolean(inputs, "clear_parent")
+
+    if parent_id is not None and clear_parent:
+        raise RuntimeError(
+            "Supply parent_id or clear_parent=true, not both."
+        )
+
+    if clear_parent:
+        update_input["parentId"] = None
+    elif "parent_id" in inputs:
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            raise RuntimeError(
+                "parent_id must be a non-empty Linear issue UUID or identifier when supplied."
+            )
+        parent_id = parent_id.strip()
+        if len(parent_id) > 200:
+            raise RuntimeError("parent_id must be 200 characters or fewer.")
+        update_input["parentId"] = parent_id
+
     if not update_input:
         raise RuntimeError(
             "Supply at least one field to update: title, description, "
-            "state_id, project_id, or priority."
+            "state_id, project_id, priority, parent_id, or clear_parent."
         )
 
     status, data = _graphql(
@@ -1006,6 +1037,10 @@ def linear_update_issue(inputs, stamp):
                 id
                 name
               }
+              parent {
+                id
+                identifier
+              }
             }
           }
         }
@@ -1031,6 +1066,7 @@ def linear_update_issue(inputs, stamp):
 
     state = issue.get("state")
     project = issue.get("project")
+    parent = issue.get("parent")
     priority = issue.get("priority")
 
     return {
@@ -1069,6 +1105,16 @@ def linear_update_issue(inputs, stamp):
         "project_name": (
             str(project.get("name") or "")
             if isinstance(project, dict)
+            else ""
+        ),
+        "parent_id": (
+            str(parent.get("id") or "")
+            if isinstance(parent, dict)
+            else ""
+        ),
+        "parent_identifier": (
+            str(parent.get("identifier") or "")
+            if isinstance(parent, dict)
             else ""
         ),
         "updated_at": str(issue.get("updatedAt") or ""),
@@ -1686,6 +1732,234 @@ def linear_link_issues(inputs, stamp):
             str(target_issue.get("identifier") or "")
             if isinstance(target_issue, dict)
             else ""
+        ),
+    }, None
+
+
+def linear_get_issue_history(inputs, stamp):
+    """
+    List an issue's audit history in receipt-safe pages: who changed what,
+    and when, for the fields this module already governs (title, state,
+    assignee, priority, project, cycle, parent, and labels).
+    """
+    issue_id = inputs.get("issue_id")
+    offset = inputs.get("offset", 0)
+    limit = inputs.get("limit", 10)
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError("issue_id must be 200 characters or fewer.")
+
+    try:
+        offset = int(offset)
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "offset and limit must be integers."
+        ) from exc
+
+    if offset < 0:
+        raise RuntimeError("offset must be zero or greater.")
+
+    if limit < 1 or limit > 25:
+        raise RuntimeError("limit must be between 1 and 25.")
+
+    status, data = _graphql(
+        """
+        query RailCallIssueHistory($issueId: String!) {
+          issue(id: $issueId) {
+            history(first: 100) {
+              nodes {
+                id
+                createdAt
+                actorId
+                actor {
+                  id
+                  name
+                }
+                botActor {
+                  id
+                  name
+                }
+                fromTitle
+                toTitle
+                fromPriority
+                toPriority
+                fromState {
+                  id
+                  name
+                }
+                toState {
+                  id
+                  name
+                }
+                fromAssignee {
+                  id
+                  name
+                }
+                toAssignee {
+                  id
+                  name
+                }
+                fromProject {
+                  id
+                  name
+                }
+                toProject {
+                  id
+                  name
+                }
+                fromCycle {
+                  id
+                  number
+                  name
+                }
+                toCycle {
+                  id
+                  number
+                  name
+                }
+                fromParent {
+                  id
+                  identifier
+                }
+                toParent {
+                  id
+                  identifier
+                }
+                addedLabels {
+                  id
+                  name
+                }
+                removedLabels {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+        """,
+        {"issueId": issue_id},
+    )
+
+    issue = data.get("issue")
+    connection = issue.get("history") if isinstance(issue, dict) else None
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+
+    if not isinstance(nodes, list):
+        raise RuntimeError(
+            "Linear did not return an issue-history list."
+        )
+
+    def _entity(entry_field, id_key="id", name_key="name"):
+        if not isinstance(entry_field, dict):
+            return None, None
+        return (
+            str(entry_field.get(id_key) or "") or None,
+            str(entry_field.get(name_key) or "") or None,
+        )
+
+    entries = []
+
+    for entry in nodes:
+        if not isinstance(entry, dict):
+            continue
+
+        actor = entry.get("actor")
+        bot_actor = entry.get("botActor")
+
+        from_state_id, from_state_name = _entity(entry.get("fromState"))
+        to_state_id, to_state_name = _entity(entry.get("toState"))
+        from_assignee_id, from_assignee_name = _entity(entry.get("fromAssignee"))
+        to_assignee_id, to_assignee_name = _entity(entry.get("toAssignee"))
+        from_project_id, from_project_name = _entity(entry.get("fromProject"))
+        to_project_id, to_project_name = _entity(entry.get("toProject"))
+        from_cycle_id, from_cycle_name = _entity(entry.get("fromCycle"))
+        to_cycle_id, to_cycle_name = _entity(entry.get("toCycle"))
+        from_parent_id, from_parent_identifier = _entity(
+            entry.get("fromParent"), name_key="identifier"
+        )
+        to_parent_id, to_parent_identifier = _entity(
+            entry.get("toParent"), name_key="identifier"
+        )
+
+        added_labels = entry.get("addedLabels")
+        removed_labels = entry.get("removedLabels")
+
+        entries.append({
+            "id": str(entry.get("id") or ""),
+            "created_at": str(entry.get("createdAt") or ""),
+            "actor_id": str(entry.get("actorId") or "") or None,
+            "actor_name": (
+                str(actor.get("name") or "") or None
+                if isinstance(actor, dict)
+                else None
+            ),
+            "bot_actor_name": (
+                str(bot_actor.get("name") or "") or None
+                if isinstance(bot_actor, dict)
+                else None
+            ),
+            "from_title": entry.get("fromTitle"),
+            "to_title": entry.get("toTitle"),
+            "from_priority": entry.get("fromPriority"),
+            "to_priority": entry.get("toPriority"),
+            "from_state_id": from_state_id,
+            "from_state_name": from_state_name,
+            "to_state_id": to_state_id,
+            "to_state_name": to_state_name,
+            "from_assignee_id": from_assignee_id,
+            "from_assignee_name": from_assignee_name,
+            "to_assignee_id": to_assignee_id,
+            "to_assignee_name": to_assignee_name,
+            "from_project_id": from_project_id,
+            "from_project_name": from_project_name,
+            "to_project_id": to_project_id,
+            "to_project_name": to_project_name,
+            "from_cycle_id": from_cycle_id,
+            "from_cycle_name": from_cycle_name,
+            "to_cycle_id": to_cycle_id,
+            "to_cycle_name": to_cycle_name,
+            "from_parent_id": from_parent_id,
+            "from_parent_identifier": from_parent_identifier,
+            "to_parent_id": to_parent_id,
+            "to_parent_identifier": to_parent_identifier,
+            "added_label_names": (
+                [str(label.get("name") or "") for label in added_labels if isinstance(label, dict)]
+                if isinstance(added_labels, list)
+                else []
+            ),
+            "removed_label_names": (
+                [str(label.get("name") or "") for label in removed_labels if isinstance(label, dict)]
+                if isinstance(removed_labels, list)
+                else []
+            ),
+        })
+
+    total_count = len(entries)
+    page = entries[offset:offset + limit]
+    has_more = (offset + limit) < total_count
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "issue_id": issue_id,
+        "entry_count": total_count,
+        "returned_count": len(page),
+        "next_offset": offset + len(page),
+        "has_more": has_more,
+        "history_json": json.dumps(
+            page,
+            ensure_ascii=False,
+            separators=(",", ":"),
         ),
     }, None
 
