@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.6.1 — Sub-Issue Parenting, Issue History, Scannable Description
+
+Two more real, evidenced gaps closed, plus the storefront-depth fix flagged
+by re-reading `docs/marketplace_review_playbook.md` in full: §1.2.D
+explicitly rejects wall-of-prose descriptions and asks for a bullet
+structure answering what/who/what-integrations — ours wasn't.
+
+- `linear.create_issue` and `linear.update_issue` gain `parent_id`
+  (sub-issue linking); `update_issue` also gains `clear_parent`, following
+  the exact `clear_assignee`/`clear_project`/`clear_cycle` convention
+  already in `triage_issue`/`rebalance_sprint`. `parentId` on
+  `IssueUpdateInput` is a plain nullable `String`, confirmed via live
+  introspection; explicit `null` clears it the same way the existing
+  clear-flags already do for assignee/project/cycle (`_graphql()` JSON-
+  serializes Python `None` to a real `null`, not an omitted key — proven
+  in production already, not a new mechanism).
+- Added `linear.get_issue_history` (`Issue.history`, a standard Relay
+  connection, confirmed via introspection) — a curated audit-trail read:
+  actor, `createdAt`, `botActor`, and from/to pairs for title, state,
+  assignee, priority, project, cycle, parent, and labels. Bounded
+  `first: 100` from Linear, client-side offset/limit slicing, matching
+  `list_workflow_states`' existing pagination pattern. `risk: low`,
+  `mode: read`.
+- Restructured `module.json`'s description opening into an explicit
+  what/who/integrations/governance bullet list per the playbook's own
+  `description_unscannable` rejection criterion. All existing detail
+  (composite descriptions, GraphQL/no-mocks paragraph, quick start,
+  limitations, contest line) preserved unchanged — only the opening three
+  paragraphs were restructured.
+- Command count: 22 → 23 (11 read, 12 write). `handlers/handler.py` and
+  `handlers/linear_guard_impl.py` stay byte-identical, both LF-only. Added
+  `tools/v16_parent_history_test.py`. Version bumped as a patch, not minor:
+  both changes extend existing commands' optional fields (non-breaking) or
+  add one read-only command, smaller in scope than v1.6.0's two new write
+  commands.
+
 ## 1.6.0 — Attachments and Issue Relations
 
 Completes the API-depth roadmap identified by competitive research (priority
