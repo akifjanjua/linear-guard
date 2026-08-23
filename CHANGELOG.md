@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.7.0 — Provider List, Lifecycle Symmetry, Cycle Writes
+
+Final pre-deadline round of the API-depth/storefront-depth work. Every
+mutation shape re-verified against Linear's live schema via unauthenticated
+introspection before writing handler code, same discipline as every prior
+round, including double-checking one field (`Comment.resolvedAt`) used in
+this round's code that hadn't been explicitly confirmed before it was
+written — it checked out, but the verification happened before commit, not
+after.
+
+- Added `"provider_list": ["linear"]` as a top-level `module.json` field.
+  Confirmed via real frontend source (`station/workbench/routes/marketplace.py`
+  and `studio/scripts/views/marketplace.js`) that this renders as small
+  provider tag chips on marketplace browse cards — a genuine, truthful
+  discoverability signal, using the same server-side field-lifting mechanism
+  already proven for `video_url`/`homepage`/`tests_url`.
+- Resolved `irreversible_effects` (left `false`, deliberately): the same
+  frontend source shows it renders a "⚠ irreversible" warning badge, not a
+  trust signal. Linear Guard has no genuinely irreversible operation — every
+  destructive-leaning command (`archive_issue`, `archive_label`) uses
+  Linear's reversible archive/retire mechanisms, never a hard delete. Setting
+  this `true` would be a false warning; `false` is correct and final.
+- Four symmetric completions, closing gaps in commands already shipped:
+  `linear.unarchive_issue` (`issueUnarchive`), `linear.update_label`
+  (`issueLabelUpdate` — completes label CRUD create/update/archive),
+  `linear.delete_attachment` (`attachmentDelete`), `linear.unlink_issues`
+  (`issueRelationDelete`).
+- `linear.resolve_comment`/`linear.unresolve_comment` (`commentResolve`/
+  `commentUnresolve`) — new comment-thread governance, beyond parity with
+  any researched competitor.
+- `linear.create_cycle`/`linear.update_cycle` (`cycleCreate`/`cycleUpdate`)
+  — cycles were previously read-only despite being the literal subject of
+  `plan_sprint`/`rebalance_sprint`/`sprint_health`. `risk: medium`, matching
+  `create_issue`/`update_issue`.
+- Command count: 23 → 31 (11 read, 20 write) — the largest single addition
+  of the night. `handlers/handler.py` and `handlers/linear_guard_impl.py`
+  stay byte-identical, both LF-only (verified via a direct byte-for-byte
+  diff of the inserted block, not just a visual check, given the size of
+  this change). Added `tools/v17_symmetry_cycles_test.py` covering all
+  eight new commands. Version bumped to minor (not patch): more new command
+  surface than any prior round, plus cycles becoming a genuinely new
+  write-capable entity category.
+- Confirmed no `commentArchive` reference was ever recorded in this
+  CHANGELOG (checked per instruction) — the earlier research-round mistake
+  (reporting `commentArchive` as real, before it was corrected to
+  `commentDelete`/`commentResolve`/`commentUnresolve` via direct
+  introspection) never made it into a release note or shipped code.
+
 ## 1.6.1 — Sub-Issue Parenting, Issue History, Scannable Description
 
 Two more real, evidenced gaps closed, plus the storefront-depth fix flagged
