@@ -46,6 +46,8 @@ jobs:
         run: python tools/v16_parent_history_test.py
       - name: Run v1.7.0 symmetry and cycle tests
         run: python tools/v17_symmetry_cycles_test.py
+      - name: Run v1.7.1 stateful pair tests
+        run: python tools/v17_stateful_pairs_test.py
       - name: Verify committed module tree signature
         run: python tools/verify_module_tree.py .
       - name: Build clean release archive
