@@ -1964,6 +1964,563 @@ def linear_get_issue_history(inputs, stamp):
     }, None
 
 
+def linear_unarchive_issue(inputs, stamp):
+    """Restore a previously archived Linear issue to active use."""
+    issue_id = inputs.get("issue_id")
+
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        raise RuntimeError(
+            "issue_id must be a non-empty Linear UUID or identifier."
+        )
+
+    issue_id = issue_id.strip()
+
+    if len(issue_id) > 200:
+        raise RuntimeError("issue_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallUnarchiveIssue($issueId: String!) {
+          issueUnarchive(id: $issueId) {
+            success
+            entity {
+              id
+              identifier
+              title
+              url
+            }
+          }
+        }
+        """,
+        {"issueId": issue_id},
+        is_write=True,
+    )
+
+    payload = data.get("issueUnarchive")
+    entity = payload.get("entity") if isinstance(payload, dict) else None
+
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise RuntimeError(
+            "Linear did not confirm the issue unarchive."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "issue_id": (
+            str(entity.get("id") or "") if isinstance(entity, dict) else issue_id
+        ),
+        "identifier": (
+            str(entity.get("identifier") or "") if isinstance(entity, dict) else ""
+        ),
+        "title": str(entity.get("title") or "") if isinstance(entity, dict) else "",
+        "url": str(entity.get("url") or "") if isinstance(entity, dict) else "",
+        "unarchived": True,
+    }, None
+
+
+def linear_update_label(inputs, stamp):
+    """Rename, recolor, or redescribe an existing Linear issue label."""
+    label_id = inputs.get("label_id")
+
+    if not isinstance(label_id, str) or not label_id.strip():
+        raise RuntimeError(
+            "label_id must be a non-empty Linear label UUID."
+        )
+
+    label_id = label_id.strip()
+
+    if len(label_id) > 200:
+        raise RuntimeError("label_id must be 200 characters or fewer.")
+
+    label_input = {}
+
+    if "name" in inputs:
+        name = inputs.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError(
+                "name must be a non-empty string when supplied."
+            )
+        name = name.strip()
+        if len(name) > 255:
+            raise RuntimeError("name must be 255 characters or fewer.")
+        label_input["name"] = name
+
+    if "color" in inputs:
+        color = inputs.get("color")
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color.strip()):
+            raise RuntimeError(
+                "color must be a hex color like #4EA7FC when supplied."
+            )
+        label_input["color"] = color.strip()
+
+    if "description" in inputs:
+        description = inputs.get("description")
+        if not isinstance(description, str):
+            raise RuntimeError(
+                "description must be a string when supplied."
+            )
+        if len(description) > 2000:
+            raise RuntimeError("description must be 2000 characters or fewer.")
+        label_input["description"] = description
+
+    if not label_input:
+        raise RuntimeError(
+            "Supply at least one field to update: name, color, or description."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallUpdateLabel($labelId: String!, $input: IssueLabelUpdateInput!) {
+          issueLabelUpdate(id: $labelId, input: $input) {
+            success
+            issueLabel {
+              id
+              name
+              color
+              description
+              isGroup
+            }
+          }
+        }
+        """,
+        {"labelId": label_id, "input": label_input},
+        is_write=True,
+    )
+
+    payload = data.get("issueLabelUpdate")
+    label = payload.get("issueLabel") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(label, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the label update."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "label_id": str(label.get("id") or ""),
+        "name": str(label.get("name") or ""),
+        "color": str(label.get("color") or ""),
+        "description": str(label.get("description") or ""),
+        "is_group": bool(label.get("isGroup")),
+    }, None
+
+
+def linear_delete_attachment(inputs, stamp):
+    """Delete an attachment from a Linear issue."""
+    attachment_id = inputs.get("attachment_id")
+
+    if not isinstance(attachment_id, str) or not attachment_id.strip():
+        raise RuntimeError(
+            "attachment_id must be a non-empty Linear attachment UUID."
+        )
+
+    attachment_id = attachment_id.strip()
+
+    if len(attachment_id) > 200:
+        raise RuntimeError("attachment_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallDeleteAttachment($attachmentId: String!) {
+          attachmentDelete(id: $attachmentId) {
+            success
+            entityId
+          }
+        }
+        """,
+        {"attachmentId": attachment_id},
+        is_write=True,
+    )
+
+    payload = data.get("attachmentDelete")
+
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise RuntimeError(
+            "Linear did not confirm the attachment delete."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "attachment_id": str(payload.get("entityId") or attachment_id),
+        "deleted": True,
+    }, None
+
+
+def linear_unlink_issues(inputs, stamp):
+    """Remove an existing relation between two Linear issues."""
+    relation_id = inputs.get("relation_id")
+
+    if not isinstance(relation_id, str) or not relation_id.strip():
+        raise RuntimeError(
+            "relation_id must be a non-empty Linear issue-relation UUID."
+        )
+
+    relation_id = relation_id.strip()
+
+    if len(relation_id) > 200:
+        raise RuntimeError("relation_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallUnlinkIssues($relationId: String!) {
+          issueRelationDelete(id: $relationId) {
+            success
+            entityId
+          }
+        }
+        """,
+        {"relationId": relation_id},
+        is_write=True,
+    )
+
+    payload = data.get("issueRelationDelete")
+
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise RuntimeError(
+            "Linear did not confirm the issue-relation delete."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "relation_id": str(payload.get("entityId") or relation_id),
+        "unlinked": True,
+    }, None
+
+
+def linear_resolve_comment(inputs, stamp):
+    """Mark a Linear comment thread as resolved."""
+    comment_id = inputs.get("comment_id")
+
+    if not isinstance(comment_id, str) or not comment_id.strip():
+        raise RuntimeError(
+            "comment_id must be a non-empty Linear comment UUID."
+        )
+
+    comment_id = comment_id.strip()
+
+    if len(comment_id) > 200:
+        raise RuntimeError("comment_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallResolveComment($commentId: String!) {
+          commentResolve(id: $commentId) {
+            success
+            comment {
+              id
+              resolvedAt
+            }
+          }
+        }
+        """,
+        {"commentId": comment_id},
+        is_write=True,
+    )
+
+    payload = data.get("commentResolve")
+    comment = payload.get("comment") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(comment, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the comment resolve."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "comment_id": str(comment.get("id") or ""),
+        "resolved_at": str(comment.get("resolvedAt") or ""),
+    }, None
+
+
+def linear_unresolve_comment(inputs, stamp):
+    """Reopen a resolved Linear comment thread."""
+    comment_id = inputs.get("comment_id")
+
+    if not isinstance(comment_id, str) or not comment_id.strip():
+        raise RuntimeError(
+            "comment_id must be a non-empty Linear comment UUID."
+        )
+
+    comment_id = comment_id.strip()
+
+    if len(comment_id) > 200:
+        raise RuntimeError("comment_id must be 200 characters or fewer.")
+
+    status, data = _graphql(
+        """
+        mutation RailCallUnresolveComment($commentId: String!) {
+          commentUnresolve(id: $commentId) {
+            success
+            comment {
+              id
+              resolvedAt
+            }
+          }
+        }
+        """,
+        {"commentId": comment_id},
+        is_write=True,
+    )
+
+    payload = data.get("commentUnresolve")
+    comment = payload.get("comment") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(comment, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the comment unresolve."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "comment_id": str(comment.get("id") or ""),
+        "resolved_at": str(comment.get("resolvedAt") or ""),
+    }, None
+
+
+def linear_create_cycle(inputs, stamp):
+    """Create a Linear cycle (sprint) for one team."""
+    team_id = inputs.get("team_id")
+    starts_at = inputs.get("starts_at")
+    ends_at = inputs.get("ends_at")
+    name = inputs.get("name")
+    description = inputs.get("description")
+
+    if not isinstance(team_id, str) or not team_id.strip():
+        raise RuntimeError(
+            "team_id must be a non-empty Linear team UUID."
+        )
+
+    if not isinstance(starts_at, str) or not starts_at.strip():
+        raise RuntimeError(
+            "starts_at must be a non-empty ISO 8601 datetime string."
+        )
+
+    if not isinstance(ends_at, str) or not ends_at.strip():
+        raise RuntimeError(
+            "ends_at must be a non-empty ISO 8601 datetime string."
+        )
+
+    team_id = team_id.strip()
+    starts_at = starts_at.strip()
+    ends_at = ends_at.strip()
+
+    if len(team_id) > 200:
+        raise RuntimeError("team_id must be 200 characters or fewer.")
+
+    cycle_input = {
+        "teamId": team_id,
+        "startsAt": starts_at,
+        "endsAt": ends_at,
+    }
+
+    if name is not None:
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError(
+                "name must be a non-empty string when supplied."
+            )
+        name = name.strip()
+        if len(name) > 255:
+            raise RuntimeError("name must be 255 characters or fewer.")
+        cycle_input["name"] = name
+
+    if description is not None:
+        if not isinstance(description, str):
+            raise RuntimeError(
+                "description must be a string when supplied."
+            )
+        if len(description) > 2000:
+            raise RuntimeError("description must be 2000 characters or fewer.")
+        cycle_input["description"] = description
+
+    status, data = _graphql(
+        """
+        mutation RailCallCreateCycle($input: CycleCreateInput!) {
+          cycleCreate(input: $input) {
+            success
+            cycle {
+              id
+              number
+              name
+              startsAt
+              endsAt
+              completedAt
+            }
+          }
+        }
+        """,
+        {"input": cycle_input},
+        is_write=True,
+    )
+
+    payload = data.get("cycleCreate")
+    cycle = payload.get("cycle") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(cycle, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm cycle creation."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "cycle_id": str(cycle.get("id") or ""),
+        "number": (
+            int(cycle.get("number"))
+            if isinstance(cycle.get("number"), (int, float))
+            else 0
+        ),
+        "name": str(cycle.get("name") or ""),
+        "starts_at": str(cycle.get("startsAt") or ""),
+        "ends_at": str(cycle.get("endsAt") or ""),
+        "completed_at": str(cycle.get("completedAt") or ""),
+    }, None
+
+
+def linear_update_cycle(inputs, stamp):
+    """Update selected fields on one existing Linear cycle."""
+    cycle_id = inputs.get("cycle_id")
+
+    if not isinstance(cycle_id, str) or not cycle_id.strip():
+        raise RuntimeError(
+            "cycle_id must be a non-empty Linear cycle UUID."
+        )
+
+    cycle_id = cycle_id.strip()
+
+    if len(cycle_id) > 200:
+        raise RuntimeError("cycle_id must be 200 characters or fewer.")
+
+    update_input = {}
+
+    if "name" in inputs:
+        name = inputs.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError(
+                "name must be a non-empty string when supplied."
+            )
+        name = name.strip()
+        if len(name) > 255:
+            raise RuntimeError("name must be 255 characters or fewer.")
+        update_input["name"] = name
+
+    if "description" in inputs:
+        description = inputs.get("description")
+        if not isinstance(description, str):
+            raise RuntimeError(
+                "description must be a string when supplied."
+            )
+        if len(description) > 2000:
+            raise RuntimeError("description must be 2000 characters or fewer.")
+        update_input["description"] = description
+
+    if "starts_at" in inputs:
+        starts_at = inputs.get("starts_at")
+        if not isinstance(starts_at, str) or not starts_at.strip():
+            raise RuntimeError(
+                "starts_at must be a non-empty ISO 8601 datetime string when supplied."
+            )
+        update_input["startsAt"] = starts_at.strip()
+
+    if "ends_at" in inputs:
+        ends_at = inputs.get("ends_at")
+        if not isinstance(ends_at, str) or not ends_at.strip():
+            raise RuntimeError(
+                "ends_at must be a non-empty ISO 8601 datetime string when supplied."
+            )
+        update_input["endsAt"] = ends_at.strip()
+
+    if "completed_at" in inputs:
+        completed_at = inputs.get("completed_at")
+        if not isinstance(completed_at, str) or not completed_at.strip():
+            raise RuntimeError(
+                "completed_at must be a non-empty ISO 8601 datetime string when supplied."
+            )
+        update_input["completedAt"] = completed_at.strip()
+
+    if not update_input:
+        raise RuntimeError(
+            "Supply at least one field to update: name, description, "
+            "starts_at, ends_at, or completed_at."
+        )
+
+    status, data = _graphql(
+        """
+        mutation RailCallUpdateCycle($cycleId: String!, $input: CycleUpdateInput!) {
+          cycleUpdate(id: $cycleId, input: $input) {
+            success
+            cycle {
+              id
+              number
+              name
+              startsAt
+              endsAt
+              completedAt
+            }
+          }
+        }
+        """,
+        {"cycleId": cycle_id, "input": update_input},
+        is_write=True,
+    )
+
+    payload = data.get("cycleUpdate")
+    cycle = payload.get("cycle") if isinstance(payload, dict) else None
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(cycle, dict)
+    ):
+        raise RuntimeError(
+            "Linear did not confirm the cycle update."
+        )
+
+    return {
+        "ok": True,
+        "loaded_from": "module:muhammad-akif-janjua/linear-guard",
+        "http_status": status,
+        "cycle_id": str(cycle.get("id") or ""),
+        "number": (
+            int(cycle.get("number"))
+            if isinstance(cycle.get("number"), (int, float))
+            else 0
+        ),
+        "name": str(cycle.get("name") or ""),
+        "starts_at": str(cycle.get("startsAt") or ""),
+        "ends_at": str(cycle.get("endsAt") or ""),
+        "completed_at": str(cycle.get("completedAt") or ""),
+    }, None
+
+
 def _optional_boolean(inputs, name):
     """Read one optional boolean from RailCall form or JSON inputs."""
     if name not in inputs:

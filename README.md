@@ -2,7 +2,7 @@
 
 [![Linear Guard Tests](https://github.com/akifjanjua/linear-guard/actions/workflows/linear-guard-tests.yml/badge.svg)](https://github.com/akifjanjua/linear-guard/actions/workflows/linear-guard-tests.yml)
 
-Linear Guard is a governance-first RailCall module for engineering, product, and operations teams using Linear. It provides 23 focused commands for discovery, sprint reporting, and approval-controlled issue operations through the real Linear GraphQL API.
+Linear Guard is a governance-first RailCall module for engineering, product, and operations teams using Linear. It provides 31 focused commands for discovery, sprint reporting, and approval-controlled issue operations through the real Linear GraphQL API.
 
 Demo video: [60-second walkthrough](https://drive.google.com/file/d/1Q40bT-Fdx2EtL2JJ021v-MZpjPrqHzDi/view?usp=sharing)
 
@@ -10,7 +10,7 @@ Demo video: [60-second walkthrough](https://drive.google.com/file/d/1Q40bT-Fdx2E
 
 Reads: `linear.get_current_user`, `linear.list_teams`, `linear.list_projects`, `linear.list_labels`, `linear.list_workflow_states`, `linear.search_issues`, `linear.get_issue`, `linear.get_issue_history`, `linear.list_members`, `linear.list_cycles`, and `linear.sprint_health`.
 
-Writes: `linear.create_issue`, `linear.update_issue`, `linear.archive_issue`, `linear.triage_issue`, `linear.plan_sprint`, `linear.rebalance_sprint`, `linear.add_comment`, `linear.update_comment`, `linear.create_label`, `linear.archive_label`, `linear.create_attachment`, and `linear.link_issues`. Every write uses `write_requires_approval`, so RailCall binds human approval to the exact payload and produces a signed receipt. `linear.archive_issue` is risk `high`; every other write here is risk `medium`. `linear.link_issues` supports Linear's four relation types: `blocks`, `duplicate`, `related`, and `similar`. `linear.create_issue`/`linear.update_issue` accept `parent_id` for sub-issues; `update_issue` also accepts `clear_parent` to detach one.
+Writes (20, each `write_requires_approval`): issue lifecycle — `create_issue`, `update_issue`, `archive_issue` (risk `high`; every other write is risk `medium`), `unarchive_issue`, `triage_issue`; label lifecycle — `create_label`, `update_label`, `archive_label`; comments — `add_comment`, `update_comment`, `resolve_comment`, `unresolve_comment`; attachments — `create_attachment`, `delete_attachment`; issue relations (`blocks`/`duplicate`/`related`/`similar`) — `link_issues`, `unlink_issues`; cycles — `create_cycle`, `update_cycle`; sprints — `plan_sprint`, `rebalance_sprint` (all prefixed `linear.`). RailCall binds every approval to the exact previewed payload and produces a signed receipt. `create_issue`/`update_issue` accept `parent_id` for sub-issues; `update_issue` also accepts `clear_parent`.
 
 `linear.plan_sprint` is the flagship composite. One approval creates 2–5 fully configured issues through Linear's server-side `issueBatchCreate` transaction. It preflights the team, cycle, project, workflow state, parent issue, assignees, and labels before the single write request. Each issue can include its own title, description, priority, estimate, assignee, and up to five labels. The receipt records the bounded blast radius and every created issue.
 
@@ -29,7 +29,7 @@ python -m pip install certifi
 railcall market install muhammad-akif-janjua/linear-guard
 ```
 
-Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.6.1**, **signature verified**, and **23 commands**.
+Open RailCall Studio, reload **Modules**, and confirm **Linear Guard v1.7.0**, **signature verified**, and **31 commands**.
 
 The release archive is built from immutable Git `HEAD` bytes, reproduces byte-for-byte across checkouts, includes an external per-file SHA-256 manifest, and must pass independent plus official RailCall signature verification after extraction.
 
@@ -52,6 +52,6 @@ Pass that array as the `issues_json` string. Optional shared fields link every i
 
 ## Limitations
 
-Personal API keys act with their creator's permissions. Sprint plans and rebalances are limited to five issues; label sets are limited to five labels; all batch outputs use bounded receipt-safe evidence shards. Search and multi-record outputs remain bounded for receipt readability.
+Personal API keys act with their creator's permissions. Sprint plans/rebalances are limited to five issues; label sets to five labels; batch outputs use bounded receipt-safe evidence shards. Search and multi-record outputs stay bounded for receipt readability.
 
 `contest:2026Q3`
