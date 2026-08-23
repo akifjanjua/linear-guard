@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.7.1 — Stateful Pair Tests
+
+Answers a direct question about test rigor: were the four reverse/produce-
+consume command pairs added in v1.7.0 actually tested *together*, or only
+independently? Checked the actual test files rather than assume — the
+answer was independently only. Every existing test (across
+`v15_api_depth_test.py`, `v16_attachments_relations_test.py`,
+`v17_symmetry_cycles_test.py`) hand-crafts its own canned mock response per
+command; nothing shared mutable state between two calls, so nothing proved
+that e.g. `unarchive_issue` actually observes what `archive_issue` did.
+
+- Added `tools/v17_stateful_pairs_test.py`: one shared, mutable fake-Linear
+  store (`FakeLinear`) used across each pair, so the second call's behavior
+  is derived from what the first call actually wrote, not a second
+  independently-authored fixture.
+  - `archive_issue` → `unarchive_issue`: asserts the fake issue's
+    `archived` flag actually flips `False → True → False`.
+  - `link_issues` → `unlink_issues`: asserts the created relation is
+    removed by id, and that unlinking the *same* id a second time fails
+    (proves targeted removal, not "any relation_id reports success").
+  - `resolve_comment` → `unresolve_comment`: asserts the same comment's
+    `resolvedAt` toggles through shared state, not two canned values.
+  - `create_cycle` → `sprint_health`: asserts a cycle created through this
+    module is read back correctly through the exact `cycle(id:)` query
+    shape `linear_sprint_health` uses, with matching id/number/name.
+- Updated `README.md`'s Limitations section to state plainly what level of
+  verification this represents: every mutation shape confirmed against
+  Linear's live schema, all four pairs now covered by stateful mocks, but
+  none of it exercised against a real Linear workspace — this environment
+  has no live credentials to do that with.
+- No command or manifest-field changes. Version bumped as a patch: test
+  coverage and documentation only.
+
 ## 1.7.0 — Provider List, Lifecycle Symmetry, Cycle Writes
 
 Final pre-deadline round of the API-depth/storefront-depth work. Every
