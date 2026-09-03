@@ -52,6 +52,16 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def official_railcall_command() -> list[str] | None:
+    # Prefer invoking the CLI's own Python entry point with this interpreter
+    # directly. The installed `railcall` wrapper script on some platforms
+    # shells out to a bare `python3`, which on Windows can resolve to the
+    # Microsoft Store app-execution-alias stub instead of a real interpreter
+    # even when a working Python is on PATH. Calling railcall_cli.py with
+    # sys.executable sidesteps that entirely.
+    cli_entry_point = Path.home() / ".railcall" / "railcall_cli.py"
+    if cli_entry_point.is_file():
+        return [sys.executable, str(cli_entry_point)]
+
     candidates = [
         Path.home() / ".railcall" / "bin" / "railcall",
         Path.home() / ".railcall" / "bin" / "railcall.exe",

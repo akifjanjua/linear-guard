@@ -21,8 +21,12 @@ except ImportError:  # Module still loads; execution gives a clear fix.
 
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+# No \b word-boundary anchors: a token glued directly to adjacent word
+# characters (e.g. concatenated into an error string with no delimiter)
+# still needs to be caught by pattern-based redaction, not just tokens with
+# clean boundaries on both sides.
 _LINEAR_TOKEN_RE = re.compile(
-    r"\b(?:lin_api_|lin_oauth_|pat-)[A-Za-z0-9._-]{8,}\b",
+    r"(?:lin_api_|lin_oauth_|pat-)[A-Za-z0-9._-]{8,}",
     re.IGNORECASE,
 )
 _AUTH_HEADER_RE = re.compile(
@@ -138,9 +142,9 @@ def _post_graphql(api_key, request_body, *, is_write=False):
             timeout=25,
             context=_build_tls_context(),
         ) as response:
-            return int(response.getcode()), response.read()
+            return int(response.getcode()), response.read(), response.headers
     except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read()
+        return int(exc.code), exc.read(), exc.headers
     except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as exc:
         detail = _network_error_message(exc, api_key)
         if is_write:
@@ -156,7 +160,7 @@ def _graphql(query, variables=None, *, is_write=False):
         ensure_ascii=False,
     ).encode("utf-8")
 
-    status, response_bytes = _post_graphql(
+    status, response_bytes, response_headers = _post_graphql(
         api_key,
         request_body,
         is_write=is_write,
@@ -174,6 +178,12 @@ def _graphql(query, variables=None, *, is_write=False):
     errors = response.get("errors") if isinstance(response, dict) else None
 
     if status == 429:
+        retry_after = response_headers.get("Retry-After") if response_headers else None
+        if isinstance(retry_after, str) and retry_after.strip():
+            raise RuntimeError(
+                f"Linear rate limit reached. Linear says to wait {retry_after.strip()} "
+                "seconds before trying again."
+            )
         raise RuntimeError(
             "Linear rate limit reached. Wait before trying again."
         )
