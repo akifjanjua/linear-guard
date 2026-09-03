@@ -71,6 +71,17 @@ def main() -> int:
     assert "[REDACTED]" in redacted
     print("PASS: active secret redaction")
 
+    # Pattern-based redaction must catch a token-shaped secret on its own,
+    # independent of the exact secret argument passed in, and even when the
+    # token has no word-boundary delimiter on either side (glued directly
+    # into surrounding text rather than cleanly separated by punctuation).
+    decoy_secret = "not-the-real-secret"
+    glued_leak = f"prefix{TEST_LINEAR_TOKEN}suffix"
+    redacted_pattern = h._redact(glued_leak, decoy_secret)
+    assert TEST_LINEAR_TOKEN not in redacted_pattern
+    assert "[REDACTED]" in redacted_pattern
+    print("PASS: pattern-based redaction catches a boundary-less token leak independent of the secret argument")
+
     calls = {"count": 0}
     original_urlopen = h.urllib.request.urlopen
 
@@ -97,6 +108,7 @@ def main() -> int:
     h._post_graphql = lambda *a, **k: (
         200,
         json.dumps({"errors": [{"message": f"bad {secret}"}]}).encode(),
+        {},
     )
     try:
         try:
@@ -109,6 +121,17 @@ def main() -> int:
     finally:
         h._post_graphql = original_post
     print("PASS: HTTP-200 GraphQL mutation errors fail and redact")
+
+    original_post = h._post_graphql
+    h._post_graphql = lambda *a, **k: (429, b"{}", {"Retry-After": "17"})
+    try:
+        expect_runtime_error(
+            lambda: h._graphql("query X { x }"),
+            "17",
+        )
+    finally:
+        h._post_graphql = original_post
+    print("PASS: a 429 response's Retry-After header is surfaced in the error message")
 
     expect_runtime_error(
         lambda: h.linear_create_issue(
